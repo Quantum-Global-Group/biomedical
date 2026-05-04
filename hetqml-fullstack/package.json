@@ -1,0 +1,14 @@
+{
+  "name": "hetqml-fullstack",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev:web": "pnpm --filter hetqml-web dev",
+    "dev:api": "cd apps/api && uv run uvicorn hetqml_api.main:app --reload --port 8000",
+    "test:web": "pnpm --filter hetqml-web test",
+    "test:api": "cd apps/api && uv run pytest",
+    "test": "pnpm test:web && pnpm test:api",
+    "build:web": "pnpm --filter hetqml-web build"
+  },
+  "packageManager": "pnpm@9.12.0"
+}

@@ -1,0 +1,62 @@
+/* Thin overrides after hetqml-export.css — a11y + Next/structural gaps */
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
+.nav-icon {
+  min-width: 14px;
+  padding-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.nav-item.active .nav-icon {
+  color: var(--teal);
+}
+
+/* Combo: open dropdown must stack above later grid rows (locked fields use pointer-events: none). */
+.combo.open {
+  z-index: 200;
+}
+
+/*
+ * Export sets .combo-list { display: none } and toggles via .combo.open.
+ * We mount the list only when open; force visible so a missing .open class
+ * (or cascade order bugs) cannot leave the list display:none.
+ */
+.combo-list[role="listbox"] {
+  display: block !important;
+  z-index: 201;
+}
+
+.session-actions-row {
+  display: flex;
+  gap: 6px;
+  margin: 12px 0 10px;
+}
+
+.session-search-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.combo-cascade-locked {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.combo-cascade-locked .combo-input-wrap {
+  cursor: not-allowed;
+}
+
+.algo-catalog-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+

@@ -1,0 +1,341 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
+import {
+  CASCADE_ORDER,
+  emptySelection,
+  type FieldName,
+  type Selection,
+} from "@/lib/investigation/recommendations";
+import { type RunPathChoice } from "@/lib/investigation/runPath";
+import {
+  ParameterCombobox,
+  type ComboOption,
+} from "@/components/investigation/ParameterCombobox";
+import { RecommendationCard } from "@/components/investigation/RecommendationCard";
+import { RunPathChooser } from "@/components/investigation/RunPathChooser";
+import { CandidateContextPanel } from "@/components/initialize/CandidateContextPanel";
+import { EvidencePosturePanel } from "@/components/initialize/EvidencePosturePanel";
+import { MiniKgPreview } from "@/components/initialize/MiniKgPreview";
+import { SessionPanel } from "@/components/initialize/SessionPanel";
+import { DISEASES } from "@/lib/data/diseases";
+import { COMPOUNDS } from "@/lib/data/compounds";
+import { GENES } from "@/lib/data/genes";
+import { METAEDGES } from "@/lib/data/metaedges";
+import { getJob, startInvestigation, type Job } from "@/lib/api/client";
+import type { StoredSession } from "@/lib/sessions/storage";
+
+const diseaseOptions: ComboOption[] = DISEASES.map((d) => ({
+  name: d.name,
+  meta: { id: d.doid, category: d.category },
+}));
+const compoundOptions: ComboOption[] = COMPOUNDS.map((c) => ({
+  name: c.name,
+  meta: { id: c.drugbank, category: c.category },
+}));
+const geneOptions: ComboOption[] = GENES.map((g) => ({
+  name: g.name,
+  meta: { id: g.ncbi, category: g.category },
+}));
+const metaedgeOptions: ComboOption[] = METAEDGES.map((m) => ({
+  name: m.name,
+  meta: {
+    id: `${m.edges} edges`,
+    category: m.directed ? "directed" : "undirected",
+  },
+}));
+
+const POLL_INTERVAL_MS = 1000;
+
+export function InitializeClient() {
+  const [selection, setSelection] = useState<Selection>(emptySelection());
+  const [runPath, setRunPath] = useState<RunPathChoice>({
+    mode: "quick",
+    family: "hybrid",
+  });
+  const [job, setJob] = useState<Job | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const updateField = (field: FieldName, value: string) => {
+    setSelection((prev) => {
+      const idx = CASCADE_ORDER.indexOf(field);
+      const next: Selection = { ...prev, [field]: value };
+      if (idx >= 0) {
+        for (let i = idx + 1; i < CASCADE_ORDER.length; i++) {
+          const f = CASCADE_ORDER[i]!;
+          next[f] = "";
+        }
+      }
+      return next;
+    });
+  };
+
+  const restoreSession = (snap: Pick<StoredSession, "selection" | "runPath">) => {
+    setSelection(snap.selection);
+    setRunPath(snap.runPath);
+  };
+
+  const allFilled = Object.values(selection).every((v) => v.length > 0);
+
+  useEffect(() => {
+    return () => {
+      if (pollTimer.current) clearTimeout(pollTimer.current);
+    };
+  }, []);
+
+  const pollJob = (id: string) => {
+    pollTimer.current = setTimeout(async () => {
+      try {
+        const next = await getJob(id);
+        setJob(next);
+        if (next.status === "queued" || next.status === "running") {
+          pollJob(id);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    }, POLL_INTERVAL_MS);
+  };
+
+  const handleRun = async () => {
+    setSubmitting(true);
+    setError(null);
+    setJob(null);
+    try {
+      const created = await startInvestigation({ selection, runPath });
+      setJob(created);
+      pollJob(created.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="grid-7-5">
+        <section className="panel">
+          <div className="panel-head">
+            <div>
+              <div className="eyebrow">TOOL · INVESTIGATION PARAMETERS</div>
+              <div className="panel-title">What you&apos;re investigating</div>
+            </div>
+            <span className="badge">Form</span>
+          </div>
+          <p className="panel-purpose">
+            The disease, compound, anchor target, and Hetionet relation. These
+            four selections define the prediction task and what evidence will
+            count.
+          </p>
+          <div className="field-grid">
+            <ParameterCombobox
+              field="disease"
+              label="Disease"
+              placeholder="Search diseases (DOID)…"
+              options={diseaseOptions}
+              value={selection.disease}
+              selection={selection}
+              onChange={(v) => updateField("disease", v)}
+            />
+            <ParameterCombobox
+              field="compound"
+              label="Compound"
+              placeholder="Search compounds (DrugBank)…"
+              lockedPlaceholder="Select a disease first…"
+              options={compoundOptions}
+              value={selection.compound}
+              selection={selection}
+              onChange={(v) => updateField("compound", v)}
+            />
+            <ParameterCombobox
+              field="gene"
+              label="Anchor target (gene)"
+              placeholder="Search genes (NCBI / HGNC)…"
+              lockedPlaceholder="Select disease and compound first…"
+              options={geneOptions}
+              value={selection.gene}
+              selection={selection}
+              onChange={(v) => updateField("gene", v)}
+            />
+            <ParameterCombobox
+              field="metaedge"
+              label="Hetionet metaedge"
+              placeholder="Choose a Hetionet metaedge type…"
+              lockedPlaceholder="Select disease, compound, and gene first…"
+              options={metaedgeOptions}
+              value={selection.metaedge}
+              selection={selection}
+              onChange={(v) => updateField("metaedge", v)}
+            />
+          </div>
+          <RecommendationCard
+            embedded
+            selection={selection}
+            onApplyField={(field, value) => updateField(field, value)}
+          />
+        </section>
+        <CandidateContextPanel selection={selection} runPath={runPath} />
+      </div>
+
+      <div className="grid-7-5">
+        <RunPathChooser choice={runPath} onChange={setRunPath} />
+        <MiniKgPreview selection={selection} />
+      </div>
+
+      <div className="grid-7-5">
+        <EvidencePosturePanel />
+        <SessionPanel
+          selection={selection}
+          runPath={runPath}
+          onRestore={restoreSession}
+        />
+      </div>
+
+      <section className="panel">
+        <div className="panel-head">
+          <div>
+            <div className="eyebrow">RUN · FASTAPI</div>
+            <div className="panel-title">Execute investigation job</div>
+          </div>
+          <span className="badge">API</span>
+        </div>
+        <p className="panel-purpose">
+          Posts to <code>/investigations/run</code> on the FastAPI service and
+          polls <code>/jobs/&lt;id&gt;</code> until the job completes.
+        </p>
+        <div className="footer-actions" style={{ marginTop: 0, paddingTop: 0, border: "none" }}>
+          <div />
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={!allFilled || submitting}
+            onClick={handleRun}
+          >
+            {submitting ? "Submitting…" : "Run investigation"}
+          </button>
+        </div>
+        {error ? (
+          <div className="skeptic-warning" style={{ marginTop: 14 }}>
+            {error}
+          </div>
+        ) : null}
+        {job ? <JobView job={job} /> : null}
+      </section>
+
+      <div className="how-to">
+        <div className="how-to-h">⊙ HOW TO READ THIS PAGE</div>
+        <div className="how-to-title">What this view answers — and what to question</div>
+        <p className="how-lede">
+          The Initialize page is six tools stacked into a contract. Read top-to-bottom:{" "}
+          <strong>investigation parameters</strong> define what you&apos;re asking,{" "}
+          <strong>candidate context</strong> says why this compound is worth asking about,{" "}
+          <strong>run path</strong> determines which algorithms execute,{" "}
+          <strong>live KG preview</strong> shows what the model will see before compute,{" "}
+          <strong>evidence posture</strong> guarantees the integrity guards are on, and{" "}
+          <strong>session</strong> persists the snapshot so the contract is reproducible.
+        </p>
+        <div className="how-quick-stats">
+          <div className="how-quick-stat">
+            <div className="how-quick-stat-num">22,634</div>
+            <div className="how-quick-stat-label">hetionet entities</div>
+          </div>
+          <div className="how-quick-stat">
+            <div className="how-quick-stat-num">24</div>
+            <div className="how-quick-stat-label">metaedges</div>
+          </div>
+          <div className="how-quick-stat">
+            <div className="how-quick-stat-num">32</div>
+            <div className="how-quick-stat-label">algorithms (catalog)</div>
+          </div>
+          <div className="how-quick-stat">
+            <div className="how-quick-stat-num">3</div>
+            <div className="how-quick-stat-label">run presets</div>
+          </div>
+          <div className="how-quick-stat">
+            <div className="how-quick-stat-num">7</div>
+            <div className="how-quick-stat-label">algo groups</div>
+          </div>
+          <div className="how-quick-stat">
+            <div className="how-quick-stat-num">6</div>
+            <div className="how-quick-stat-label">tools on page</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="footer-actions">
+        <div style={{ display: "flex", gap: 8 }}>
+          <Link className="btn" href="/visualize">
+            ⌥ Visualize evidence
+          </Link>
+          <Link className="btn" href="/operations">
+            ⌥ Check operations
+          </Link>
+        </div>
+        <Link className="btn-primary" href="/experiment">
+          Open Experiment →
+        </Link>
+      </div>
+    </>
+  );
+}
+
+function JobView({ job }: { job: Job }) {
+  return (
+    <div style={{ marginTop: 16 }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}
+      >
+        <div>
+          <div className="eyebrow">JOB {job.id.slice(0, 8)}</div>
+          <div style={{ fontSize: 13, color: "var(--muted)" }}>
+            Created {new Date(job.createdAt).toLocaleTimeString()}
+          </div>
+        </div>
+        <span className="pill" style={{ textTransform: "lowercase" }}>
+          {job.status}
+        </span>
+      </div>
+
+      {job.metrics ? (
+        <div className="metrics" style={{ marginTop: 12 }}>
+          <div className="metric">
+            <div className="metric-label">PR-AUC</div>
+            <div className="metric-value teal">
+              {job.metrics.prAuc.toFixed(3)}
+            </div>
+          </div>
+          <div className="metric">
+            <div className="metric-label">ROC-AUC</div>
+            <div className="metric-value teal">
+              {job.metrics.rocAuc.toFixed(3)}
+            </div>
+          </div>
+          <div className="metric">
+            <div className="metric-label">Brier</div>
+            <div className="metric-value">{job.metrics.brier.toFixed(3)}</div>
+          </div>
+          <div className="metric">
+            <div className="metric-label">ECE</div>
+            <div className="metric-value">{job.metrics.ece.toFixed(3)}</div>
+          </div>
+        </div>
+      ) : (
+        <p style={{ color: "var(--muted)", marginTop: 10 }}>
+          {job.status === "queued" ? "Queued…" : "Running…"}
+        </p>
+      )}
+
+      {job.error ? (
+        <div style={{ marginTop: 10, color: "var(--sienna)" }}>{job.error}</div>
+      ) : null}
+    </div>
+  );
+}

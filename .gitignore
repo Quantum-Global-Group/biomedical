@@ -1,0 +1,32 @@
+# package manager caches
+.pnpm-store/
+node_modules/
+
+# editor / IDE
+.cursor/
+.vscode/
+.idea/
+.DS_Store
+
+# build output
+.next/
+out/
+dist/
+.turbo/
+coverage/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# env files
+.env
+.env.local
+.env.*.local
+
+# logs
+*.log

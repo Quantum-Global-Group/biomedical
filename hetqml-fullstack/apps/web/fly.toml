@@ -1,0 +1,25 @@
+app = "hetqml-web"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+  # Server-side fetches use Fly 6PN private networking.
+  API_INTERNAL_URL = "http://hetqml-api.internal:8000"
+  # Browser fetches use the public hostname; set NEXT_PUBLIC_API_URL with
+  # `fly secrets set` so it is baked into the build.
+  NEXT_PUBLIC_API_URL = "https://hetqml-api.fly.dev"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
