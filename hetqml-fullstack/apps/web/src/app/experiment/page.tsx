@@ -1,13 +1,10 @@
-import { StubPage } from "@/components/shell/StubPage";
+import { AppShell } from "@/components/shell/AppShell";
+import { ExperimentClient } from "./ExperimentClient";
 
 export default function ExperimentPage() {
   return (
-    <StubPage
-      active="/experiment"
-      step="02 · EXPERIMENT"
-      title="Produce evidence"
-      blurb="Metric strip, source check, model leaderboard, candidate spotlight, scientific quality controls."
-      legacyHref="../hetqml-pages/experiment/"
-    />
+    <AppShell active="/experiment">
+      <ExperimentClient />
+    </AppShell>
   );
 }

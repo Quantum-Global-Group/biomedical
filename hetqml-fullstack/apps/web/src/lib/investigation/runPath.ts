@@ -14,6 +14,10 @@ export interface RunFamily {
   summary: string;
   runtime: string;
   algorithms: string;
+  /** Default "generalist" recommended algorithm for this family — when no
+   * live catalog data is available, the chooser falls back to this name +
+   * rationale. The catalog lookup wins when present. */
+  defaultGeneralist?: { name: string; rationale: string };
 }
 
 export const RUN_PATH_MODES: readonly RunMode[] = [
@@ -40,6 +44,11 @@ export const RUN_PATH_FAMILIES: readonly RunFamily[] = [
       "Fast CPU baseline with stacking, GBDT, and KGE models. Best for quick sanity checks.",
     runtime: "~50s",
     algorithms: "8 algorithms",
+    defaultGeneralist: {
+      name: "Stacking",
+      rationale:
+        "Heterogeneous ensemble — strongest classical baseline across PR-AUC and calibration.",
+    },
   },
   {
     id: "hybrid",
@@ -49,6 +58,11 @@ export const RUN_PATH_FAMILIES: readonly RunFamily[] = [
       "fast recommended default: quantum kernels plus classical baselines for parameter-efficient comparison.",
     runtime: "~2m",
     algorithms: "3 hybrid + 8 baselines",
+    defaultGeneralist: {
+      name: "Quantum Kernel + Metapath",
+      rationale:
+        "Parameter-efficient quantum kernel over Hetionet metapath features; the default hybrid pick.",
+    },
   },
   {
     id: "quantum",
@@ -58,6 +72,11 @@ export const RUN_PATH_FAMILIES: readonly RunFamily[] = [
       "Hardware-validated path with QAOA / VQE and classical baselines. Best when reviewer evidence needs backend traces.",
     runtime: "~4m",
     algorithms: "2 quantum + 8 baselines",
+    defaultGeneralist: {
+      name: "QAOA",
+      rationale:
+        "Cost+mixer Hamiltonian on hardware; produces backend traces a reviewer can audit.",
+    },
   },
 ];
 

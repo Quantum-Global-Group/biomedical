@@ -10,9 +10,16 @@ from hetqml_api.settings import Settings
 
 
 @pytest.fixture
-def app():
-    """Fresh app per test with a fast (sleep ~0) runner so polling tests stay quick."""
-    settings = Settings(allowed_origins="http://localhost:3000")
+def app(tmp_path):
+    """Fresh app per test with:
+    - fast (sleep ~0) runner so polling tests stay quick;
+    - sqlite db rooted in a per-test tmp_path so persistence tests don't
+      bleed across each other.
+    """
+    settings = Settings(
+        allowed_origins="http://localhost:3000",
+        data_dir=tmp_path,
+    )
     application = create_app(settings)
     store = InMemoryJobStore()
     application.state.job_store = store

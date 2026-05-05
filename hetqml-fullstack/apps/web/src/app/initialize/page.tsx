@@ -1,7 +1,10 @@
 import { AppShell } from "@/components/shell/AppShell";
+import { fetchCatalogsForServerComponent } from "@/lib/data/fetchCatalogsServer";
 import { InitializeClient } from "./InitializeClient";
 
-export default function InitializePage() {
+export default async function InitializePage() {
+  const catalogs = await fetchCatalogsForServerComponent();
+
   return (
     <AppShell active="/initialize">
       <div className="page-hero">
@@ -16,7 +19,7 @@ export default function InitializePage() {
         </div>
         <span className="pill">● ready</span>
       </div>
-      <InitializeClient />
+      <InitializeClient initialCatalogs={catalogs} />
     </AppShell>
   );
 }

@@ -1,8 +1,10 @@
-"use client";
-
-import { useEffect, useState } from "react";
 import { Sidebar } from "./Sidebar";
 
+/**
+ * Server component shell. Renders the persistent sidebar + main slot. The
+ * collapse-state is owned by the Sidebar (the only thing that needs to be
+ * interactive), so the shell itself ships zero JS to the browser.
+ */
 export function AppShell({
   active,
   children,
@@ -10,21 +12,9 @@ export function AppShell({
   active: string;
   children: React.ReactNode;
 }) {
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-
-  useEffect(() => {
-    document.body.classList.toggle("sidebar-collapsed", sidebarCollapsed);
-    return () => {
-      document.body.classList.remove("sidebar-collapsed");
-    };
-  }, [sidebarCollapsed]);
-
   return (
     <>
-      <Sidebar
-        active={active}
-        onToggleSidebar={() => setSidebarCollapsed((c) => !c)}
-      />
+      <Sidebar active={active} />
       <div className="sidebar-floating-tooltip" aria-hidden="true" />
       <main className="main">{children}</main>
     </>

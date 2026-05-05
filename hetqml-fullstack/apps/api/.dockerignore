@@ -8,3 +8,8 @@ __pycache__
 !.env.example
 .git
 tests
+.data
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm

@@ -7,10 +7,18 @@ import {
   type RunPathChoice,
 } from "@/lib/investigation/runPath";
 import { AlgorithmCatalog } from "@/components/initialize/AlgorithmCatalog";
+import {
+  ALGORITHM_CATALOG,
+  type CatalogGroup,
+} from "@/lib/data/algorithmCatalog";
+import { pickGeneralist } from "@/lib/data/catalogAdapter";
 
 interface Props {
   choice: RunPathChoice;
   onChange: (next: RunPathChoice) => void;
+  /** Live catalog from `useCatalogs()`. Optional — falls back to the local
+   * seed groups when not supplied. */
+  catalog?: readonly CatalogGroup[];
 }
 
 const CARD_UI: Record<
@@ -45,9 +53,10 @@ function cardTitle(id: RunFamilyId, label: string) {
   return label;
 }
 
-export function RunPathChooser({ choice, onChange }: Props) {
+export function RunPathChooser({ choice, onChange, catalog }: Props) {
   const sel = getRunPathSelection(choice);
   const activeFamily = sel.family.id;
+  const groups = catalog ?? ALGORITHM_CATALOG;
 
   return (
     <section className="panel">
@@ -70,6 +79,11 @@ export function RunPathChooser({ choice, onChange }: Props) {
         {RUN_PATH_FAMILIES.map((fam) => {
           const ui = CARD_UI[fam.id];
           const isActive = activeFamily === fam.id;
+          const liveGeneralist = pickGeneralist(fam.id, groups);
+          const generalistName =
+            liveGeneralist?.name ?? fam.defaultGeneralist?.name ?? null;
+          const generalistRationale =
+            liveGeneralist?.mech ?? fam.defaultGeneralist?.rationale ?? null;
           return (
             <div
               key={fam.id}
@@ -102,12 +116,54 @@ export function RunPathChooser({ choice, onChange }: Props) {
                 <span>{ui.time}</span>
               </div>
               <div className="run-path-detail">{ui.detail}</div>
+              {generalistName ? (
+                <div
+                  className="run-path-generalist"
+                  data-testid={`generalist-${fam.id}`}
+                  style={{
+                    marginTop: 10,
+                    paddingTop: 10,
+                    borderTop: "1px dashed var(--border-soft)",
+                    fontSize: 11,
+                    fontFamily: "monospace",
+                    color: "var(--muted)",
+                    textAlign: "left",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 9,
+                      letterSpacing: "0.5px",
+                      color: "var(--gold)",
+                      textTransform: "uppercase",
+                      marginBottom: 3,
+                    }}
+                  >
+                    Recommended generalist
+                  </div>
+                  <div style={{ color: "var(--ink)", fontWeight: 500 }}>
+                    {generalistName}
+                  </div>
+                  {generalistRationale ? (
+                    <div
+                      style={{
+                        fontSize: 10,
+                        lineHeight: 1.4,
+                        marginTop: 2,
+                        color: "var(--faint)",
+                      }}
+                    >
+                      {generalistRationale}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           );
         })}
       </div>
 
-      <AlgorithmCatalog selectedFamily={activeFamily} />
+      <AlgorithmCatalog selectedFamily={activeFamily} catalog={catalog} />
 
       <div className="panel-footer">
         <span>

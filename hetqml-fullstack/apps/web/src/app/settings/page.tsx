@@ -1,13 +1,15 @@
-import { StubPage } from "@/components/shell/StubPage";
+import { AppShell } from "@/components/shell/AppShell";
+import { fetchSettingsForServerComponent } from "@/lib/data/fetchSettingsServer";
+import { SettingsClient } from "./SettingsClient";
 
-export default function SettingsPage() {
+export const dynamic = "force-dynamic";
+
+export default async function SettingsPage() {
+  const initial = await fetchSettingsForServerComponent();
+
   return (
-    <StubPage
-      active="/settings"
-      step="06 · SETTINGS"
-      title="Preferences"
-      blurb="Profile, appearance, pipeline defaults, quantum preferences, notifications, privacy, IBM connection, API keys."
-      legacyHref="../hetqml-pages/settings/"
-    />
+    <AppShell active="/settings">
+      <SettingsClient initial={initial} />
+    </AppShell>
   );
 }

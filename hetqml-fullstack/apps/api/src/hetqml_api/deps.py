@@ -9,6 +9,8 @@ from fastapi import Request
 
 from hetqml_api.jobs.runner import Runner
 from hetqml_api.jobs.store import JobStore
+from hetqml_api.ops.provider import OpsProvider
+from hetqml_api.persistence.protocols import DecisionStore, NoteStore, SettingsStore
 
 
 def get_store(request: Request) -> JobStore:
@@ -17,3 +19,19 @@ def get_store(request: Request) -> JobStore:
 
 def get_runner(request: Request) -> Runner:
     return request.app.state.job_runner  # type: ignore[no-any-return]
+
+
+def get_ops_provider(request: Request) -> OpsProvider:
+    return request.app.state.ops_provider  # type: ignore[no-any-return]
+
+
+def get_decision_store(request: Request) -> DecisionStore:
+    return request.app.state.decision_store  # type: ignore[no-any-return]
+
+
+def get_note_store(request: Request) -> NoteStore:
+    return request.app.state.note_store  # type: ignore[no-any-return]
+
+
+def get_settings_store(request: Request) -> SettingsStore:
+    return request.app.state.settings_store  # type: ignore[no-any-return]

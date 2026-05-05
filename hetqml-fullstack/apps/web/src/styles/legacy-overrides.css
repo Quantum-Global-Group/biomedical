@@ -1,5 +1,19 @@
 /* Thin overrides after hetqml-export.css — a11y + Next/structural gaps */
 
+/* next/font wiring. Inter and JetBrains Mono are injected as CSS variables
+ * from app/layout.tsx; prepend them to the existing system stacks so the
+ * webfont loads without CLS and the system stack remains the fallback. */
+body {
+  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, sans-serif;
+}
+.mono,
+code,
+pre,
+kbd {
+  font-family: var(--font-mono), "SF Mono", Monaco, "Cascadia Code", monospace;
+}
+
 a:focus-visible,
 button:focus-visible,
 input:focus-visible {

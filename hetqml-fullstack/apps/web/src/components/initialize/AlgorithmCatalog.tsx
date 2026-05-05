@@ -38,26 +38,25 @@ function statusPillClass(status: CatalogRow["status"]) {
 
 interface Props {
   selectedFamily: RunFamilyId;
+  /** Live catalog groups from useCatalogs(). Falls back to local seed when undefined. */
+  catalog?: readonly CatalogGroup[];
 }
 
-export function AlgorithmCatalog({ selectedFamily }: Props) {
+export function AlgorithmCatalog({ selectedFamily, catalog }: Props) {
+  const groups = catalog ?? ALGORITHM_CATALOG;
   const [filter, setFilter] = useState<FilterId>("all");
-  const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
-    const init: Record<string, boolean> = {};
-    for (const g of ALGORITHM_CATALOG) init[g.name] = true;
-    return init;
-  });
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
-  const stats = useMemo(() => catalogStats(ALGORITHM_CATALOG), []);
+  const stats = useMemo(() => catalogStats(groups), [groups]);
 
   const visibleGroups = useMemo(() => {
     const out: CatalogGroup[] = [];
-    for (const g of ALGORITHM_CATALOG) {
+    for (const g of groups) {
       const rows = g.rows.filter((r) => rowVisible(r, filter, selectedFamily));
       if (rows.length) out.push({ name: g.name, rows });
     }
     return out;
-  }, [filter, selectedFamily]);
+  }, [filter, selectedFamily, groups]);
 
   const visibleCount = useMemo(
     () => visibleGroups.reduce((n, g) => n + g.rows.length, 0),
@@ -119,8 +118,7 @@ export function AlgorithmCatalog({ selectedFamily }: Props) {
       <div>
         {visibleGroups.map((group) => {
           const exp = expanded[group.name] ?? true;
-          const total = ALGORITHM_CATALOG.find((g) => g.name === group.name)
-            ?.rows.length;
+          const total = groups.find((g) => g.name === group.name)?.rows.length;
           return (
             <div
               key={group.name}

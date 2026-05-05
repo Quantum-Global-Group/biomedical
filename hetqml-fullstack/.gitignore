@@ -19,3 +19,8 @@ coverage/
 .vscode/
 .idea/
 .fly/
+.data/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm

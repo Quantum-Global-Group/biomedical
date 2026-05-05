@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 
 const APP_VER = "v0.7.2";
 
@@ -22,10 +23,20 @@ function navClass(active: string, href: string) {
 
 interface SidebarProps {
   active: string;
-  onToggleSidebar: () => void;
 }
 
-export function Sidebar({ active, onToggleSidebar }: SidebarProps) {
+export function Sidebar({ active }: SidebarProps) {
+  // Owns the collapse state so AppShell can stay a server component.
+  // Toggle flips a body class — the export CSS already handles the rest.
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    document.body.classList.toggle("sidebar-collapsed", collapsed);
+    return () => {
+      document.body.classList.remove("sidebar-collapsed");
+    };
+  }, [collapsed]);
+
   return (
     <aside className="sidebar">
       <button
@@ -33,7 +44,7 @@ export function Sidebar({ active, onToggleSidebar }: SidebarProps) {
         className="sidebar-toggle"
         title="Collapse sidebar"
         aria-label="Toggle sidebar"
-        onClick={onToggleSidebar}
+        onClick={() => setCollapsed((c) => !c)}
       >
         ‹
       </button>

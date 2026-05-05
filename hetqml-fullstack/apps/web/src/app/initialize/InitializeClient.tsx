@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   CASCADE_ORDER,
   emptySelection,
@@ -17,38 +17,24 @@ import { RecommendationCard } from "@/components/investigation/RecommendationCar
 import { RunPathChooser } from "@/components/investigation/RunPathChooser";
 import { CandidateContextPanel } from "@/components/initialize/CandidateContextPanel";
 import { EvidencePosturePanel } from "@/components/initialize/EvidencePosturePanel";
+import { HetionetStatsBadge } from "@/components/initialize/HetionetStatsBadge";
 import { MiniKgPreview } from "@/components/initialize/MiniKgPreview";
 import { SessionPanel } from "@/components/initialize/SessionPanel";
-import { DISEASES } from "@/lib/data/diseases";
-import { COMPOUNDS } from "@/lib/data/compounds";
-import { GENES } from "@/lib/data/genes";
-import { METAEDGES } from "@/lib/data/metaedges";
+import { useCatalogs } from "@/lib/data/useCatalogs";
+import type { InitialCatalogs } from "@/lib/data/fetchCatalogsServer";
 import { getJob, startInvestigation, type Job } from "@/lib/api/client";
 import type { StoredSession } from "@/lib/sessions/storage";
+import { setLastJobId } from "@/lib/sessions/lastJob";
+import { useVisiblePoll } from "@/lib/polling/useVisiblePoll";
 
-const diseaseOptions: ComboOption[] = DISEASES.map((d) => ({
-  name: d.name,
-  meta: { id: d.doid, category: d.category },
-}));
-const compoundOptions: ComboOption[] = COMPOUNDS.map((c) => ({
-  name: c.name,
-  meta: { id: c.drugbank, category: c.category },
-}));
-const geneOptions: ComboOption[] = GENES.map((g) => ({
-  name: g.name,
-  meta: { id: g.ncbi, category: g.category },
-}));
-const metaedgeOptions: ComboOption[] = METAEDGES.map((m) => ({
-  name: m.name,
-  meta: {
-    id: `${m.edges} edges`,
-    category: m.directed ? "directed" : "undirected",
-  },
-}));
+const POLL_BASE_MS = 1000;
+const POLL_MAX_MS = 8000;
 
-const POLL_INTERVAL_MS = 1000;
-
-export function InitializeClient() {
+export function InitializeClient({
+  initialCatalogs,
+}: {
+  initialCatalogs?: InitialCatalogs;
+}) {
   const [selection, setSelection] = useState<Selection>(emptySelection());
   const [runPath, setRunPath] = useState<RunPathChoice>({
     mode: "quick",
@@ -57,7 +43,62 @@ export function InitializeClient() {
   const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const catalogs = useCatalogs({ initial: initialCatalogs });
+
+  const pollableJobId =
+    job && (job.status === "queued" || job.status === "running")
+      ? job.id
+      : null;
+
+  useVisiblePoll<Job>({
+    enabled: pollableJobId,
+    baseMs: POLL_BASE_MS,
+    maxMs: POLL_MAX_MS,
+    fetcher: async () => {
+      const next = await getJob(pollableJobId!);
+      setJob(next);
+      return next;
+    },
+    isDone: (j) => j.status !== "queued" && j.status !== "running",
+    isProgress: (prev, next) => !prev || prev.status !== next.status,
+  });
+
+  const diseaseOptions = useMemo<ComboOption[]>(
+    () =>
+      catalogs.diseases.map((d) => ({
+        name: d.name,
+        meta: { id: d.doid, category: d.category },
+      })),
+    [catalogs.diseases],
+  );
+  const compoundOptions = useMemo<ComboOption[]>(
+    () =>
+      catalogs.compounds.map((c) => ({
+        name: c.name,
+        meta: { id: c.drugbank, category: c.category },
+      })),
+    [catalogs.compounds],
+  );
+  const geneOptions = useMemo<ComboOption[]>(
+    () =>
+      catalogs.genes.map((g) => ({
+        name: g.name,
+        meta: { id: g.ncbi, category: g.category },
+      })),
+    [catalogs.genes],
+  );
+  const metaedgeOptions = useMemo<ComboOption[]>(
+    () =>
+      catalogs.metaedges.map((m) => ({
+        name: m.name,
+        meta: {
+          id: `${m.edges.toLocaleString()} edges`,
+          category: m.directed ? "directed" : "undirected",
+        },
+      })),
+    [catalogs.metaedges],
+  );
 
   const updateField = (field: FieldName, value: string) => {
     setSelection((prev) => {
@@ -80,26 +121,6 @@ export function InitializeClient() {
 
   const allFilled = Object.values(selection).every((v) => v.length > 0);
 
-  useEffect(() => {
-    return () => {
-      if (pollTimer.current) clearTimeout(pollTimer.current);
-    };
-  }, []);
-
-  const pollJob = (id: string) => {
-    pollTimer.current = setTimeout(async () => {
-      try {
-        const next = await getJob(id);
-        setJob(next);
-        if (next.status === "queued" || next.status === "running") {
-          pollJob(id);
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      }
-    }, POLL_INTERVAL_MS);
-  };
-
   const handleRun = async () => {
     setSubmitting(true);
     setError(null);
@@ -107,7 +128,7 @@ export function InitializeClient() {
     try {
       const created = await startInvestigation({ selection, runPath });
       setJob(created);
-      pollJob(created.id);
+      setLastJobId(created.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -172,6 +193,7 @@ export function InitializeClient() {
               onChange={(v) => updateField("metaedge", v)}
             />
           </div>
+          <HetionetStatsBadge state={catalogs} />
           <RecommendationCard
             embedded
             selection={selection}
@@ -182,7 +204,11 @@ export function InitializeClient() {
       </div>
 
       <div className="grid-7-5">
-        <RunPathChooser choice={runPath} onChange={setRunPath} />
+        <RunPathChooser
+          choice={runPath}
+          onChange={setRunPath}
+          catalog={catalogs.algorithms}
+        />
         <MiniKgPreview selection={selection} />
       </div>
 
