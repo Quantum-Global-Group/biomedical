@@ -3,8 +3,15 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { getJob, type Job } from "@/lib/api/client";
+import { useDashboardMode } from "@/lib/dashboardMode/DashboardModeProvider";
+import {
+  HEADLINE_CONFIG,
+  HEADLINE_DECISION_STATUS,
+} from "@/lib/data/headlineMetrics";
+import { buildHeadlineLeaderboardRows } from "@/lib/experiment/headlineRows";
 import { deriveLede } from "@/lib/experiment/selectors";
 import { getLastJobId } from "@/lib/sessions/lastJob";
+import { HeadlineLeaderboard } from "@/components/experiment/HeadlineLeaderboard";
 import { MetricStrip } from "@/components/experiment/MetricStrip";
 import { SourceCheckPanel } from "@/components/experiment/SourceCheckPanel";
 import { LeaderboardPanel } from "@/components/experiment/LeaderboardPanel";
@@ -18,10 +25,19 @@ const POLL_BASE_MS = 1500;
 const POLL_MAX_MS = 12_000;
 
 export function ExperimentClient() {
+  const { mode, hydrated } = useDashboardMode();
   const [jobId, setJobId] = useState<string | null>(null);
   const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Headline mode is decoupled from any specific candidate / jobId — it
+  // shows the project's preregistered methodology panel. Wait for the
+  // mode to hydrate from localStorage before deciding so we don't flash
+  // the demo flow first.
+  if (hydrated && mode === "headline") {
+    return <HeadlineExperimentView />;
+  }
 
   // Resolve job id from URL ?jobId=, then localStorage fallback. Runs once
   // on mount; the polling effect picks up the resolved id.
@@ -215,5 +231,153 @@ function EmptyState() {
         </div>
       </div>
     </>
+  );
+}
+
+/**
+ * Headline-mode view for the Experiment page. No specific candidate/disease
+ * pair — this is the project's preregistered panel-wide methodology study
+ * (Hetionet CtD, 5-fold CV, paired-bootstrap CIs across the 5-row panel).
+ *
+ * The page-hero, leaderboard, and configuration / decision-status panels
+ * are all sourced from `lib/data/headlineMetrics.ts`. Demo-mode-only
+ * sections (CandidateSpotlight, BenchmarkSuite, MetricStrip) are
+ * intentionally omitted — they assume a per-pair score that doesn't
+ * apply at the methodology level.
+ */
+function HeadlineExperimentView() {
+  const rows = buildHeadlineLeaderboardRows();
+  return (
+    <>
+      <div className="page-hero">
+        <div>
+          <div className="step">02 · EXPERIMENT (HEADLINE)</div>
+          <h1 className="h1">Hetionet CtD methodology study</h1>
+          <p className="lede">
+            Preregistered five-row panel — QSVC alone (H1) and the hybrid
+            stacking ensemble (H1b) versus the classical baselines on the
+            Compound-treats-Disease subgraph. Paired-bootstrap confidence
+            intervals land once the headline GPU run on the DGX produces{" "}
+            <code>docs/results/bootstrap_ci_analysis.md</code>.
+          </p>
+        </div>
+        <span className="pill" style={{ background: "var(--paper-alt)", color: "var(--gold)" }}>
+          ● locked methodology · CIs pending
+        </span>
+      </div>
+
+      <HeadlineLeaderboard rows={rows} />
+
+      <div className="panel">
+        <div className="panel-head">
+          <div>
+            <div className="eyebrow">CONFIG · LOCKED</div>
+            <div className="panel-title">Preregistered configuration (§4 · §5.1)</div>
+          </div>
+          <span className="badge">Reference</span>
+        </div>
+        <p className="panel-purpose">
+          Every value below is locked by{" "}
+          <code>utils/preregistered_constants.py</code> in the sibling
+          <code>hybrid-qml-kg-poc</code> repo. Deviating from any of these
+          requires a §12 amendment to the OSF preregistration.
+        </p>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+            rowGap: 6,
+            columnGap: 24,
+            marginTop: 12,
+            fontSize: 12,
+            lineHeight: 1.6,
+            color: "var(--muted, #B8AFA5)",
+          }}
+        >
+          <ConfigRow label="Knowledge graph" value={HEADLINE_CONFIG.graph} />
+          <ConfigRow label="Embedding" value={HEADLINE_CONFIG.embedding} />
+          <ConfigRow label="Pair feature ops" value={HEADLINE_CONFIG.pairOps} />
+          <ConfigRow label="Pre-PCA" value={`${HEADLINE_CONFIG.prePca}D`} />
+          <ConfigRow label="Quantum kernel dim" value={`${HEADLINE_CONFIG.qmlDim} qubits`} />
+          <ConfigRow label="Feature map" value={HEADLINE_CONFIG.featureMap} />
+          <ConfigRow label="QSVC C" value={String(HEADLINE_CONFIG.qsvcC)} />
+          <ConfigRow label="Negatives" value={HEADLINE_CONFIG.negativeSampling} />
+          <ConfigRow label="Bootstrap" value={HEADLINE_CONFIG.bootstrap} />
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-head">
+          <div>
+            <div className="eyebrow">DECISION · §1.3 · §8.1</div>
+            <div className="panel-title">Hypothesis decision-rule status</div>
+          </div>
+          <span className="badge">Pending</span>
+        </div>
+        <p className="panel-purpose">
+          Each row shows the §1.3 hypothesis and its current decision-rule
+          status. H1 / H1b need the GPU bootstrap-CI run; H2 / H3 need the
+          IBM Torino + Pauli Path ZNE hardware experiments.
+        </p>
+        <div style={{ marginTop: 12 }}>
+          <DecisionRow id="H1" status={HEADLINE_DECISION_STATUS.h1} />
+          <DecisionRow id="H1b" status={HEADLINE_DECISION_STATUS.h1b} />
+          <DecisionRow id="H2" status={HEADLINE_DECISION_STATUS.h2} />
+          <DecisionRow id="H3" status={HEADLINE_DECISION_STATUS.h3} />
+        </div>
+        <div className="panel-footer">
+          <span>preregistration §10 timeline · OSF Q3 2026 · submission Q1 2027</span>
+        </div>
+      </div>
+
+      <div className="footer-actions">
+        <div style={{ display: "flex", gap: 8 }}>
+          <Link className="btn" href="/initialize">
+            ← Re-Initialize (demo)
+          </Link>
+        </div>
+        <Link className="btn-primary" href="/validate">
+          Send to Validate →
+        </Link>
+      </div>
+    </>
+  );
+}
+
+function ConfigRow({ label, value }: { label: string; value: string }) {
+  return (
+    <>
+      <span style={{ color: "var(--faint, #857D75)" }}>{label}</span>
+      <span style={{ color: "var(--ink, #E8E0D6)", fontFamily: "var(--font-mono, monospace)" }}>
+        {value}
+      </span>
+    </>
+  );
+}
+
+function DecisionRow({ id, status }: { id: string; status: string }) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "60px 1fr",
+        gap: 12,
+        padding: "8px 0",
+        borderBottom: "1px solid var(--border-soft, #332D27)",
+        alignItems: "baseline",
+      }}
+    >
+      <span
+        style={{
+          color: "var(--gold, #C8A45A)",
+          fontFamily: "var(--font-mono, monospace)",
+          fontWeight: 600,
+          fontSize: 13,
+        }}
+      >
+        {id}
+      </span>
+      <span style={{ color: "var(--muted, #B8AFA5)", fontSize: 12 }}>{status}</span>
+    </div>
   );
 }
