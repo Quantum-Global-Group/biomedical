@@ -1,13 +1,10 @@
-import { StubPage } from "@/components/shell/StubPage";
+import { AppShell } from "@/components/shell/AppShell";
+import { VisualizeClient } from "./VisualizeClient";
 
 export default function VisualizePage() {
   return (
-    <StubPage
-      active="/visualize"
-      step="04 · VISUALIZE"
-      title="Inspect visually"
-      blurb="3Dmol.js, Three.js, UMAP, ZZFeatureMap. The original page was already a stub in the static export."
-      legacyHref="../hetqml-pages/visualize/"
-    />
+    <AppShell active="/visualize">
+      <VisualizeClient />
+    </AppShell>
   );
 }

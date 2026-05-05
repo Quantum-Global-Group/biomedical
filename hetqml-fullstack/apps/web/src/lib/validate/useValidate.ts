@@ -97,7 +97,10 @@ export function useValidate(): ValidateState {
   const [jobId, setJobId] = useState<string | null>(null);
   const [job, setJob] = useState<Job | null>(null);
   const [jobError, setJobError] = useState<string | null>(null);
-  const [phase, setPhase] = useState<ValidatePhase>("loading");
+  // Start in "no-job" so SSR renders the EmptyState, not a misleading
+  // "Loading job …" line. The first effect transitions to "loading" once
+  // it actually finds a jobId in the URL or localStorage.
+  const [phase, setPhase] = useState<ValidatePhase>("no-job");
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelled = useRef(false);
 
@@ -114,7 +117,9 @@ export function useValidate(): ValidateState {
     const fromUrl = url.searchParams.get("jobId");
     const id = fromUrl ?? getLastJobId();
     setJobId(id);
-    if (!id) setPhase("no-job");
+    // Initial phase is "no-job"; flip to "loading" only when we actually
+    // resolved a jobId — keeps the EmptyState path the SSR default.
+    if (id) setPhase("loading");
   }, []);
 
   const fetchJobOnce = useCallback(async (id: string) => {

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "@/styles/hetqml-export.css";
 import "@/styles/legacy-overrides.css";
+import { DashboardModeProvider } from "@/lib/dashboardMode/DashboardModeProvider";
 
 // Self-hosted, subset, swap fallback so first paint uses the local fallback
 // and there is zero CLS when the webfont arrives. Exposed as CSS variables
@@ -31,7 +32,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
-      <body>{children}</body>
+      <body>
+        <DashboardModeProvider>{children}</DashboardModeProvider>
+      </body>
     </html>
   );
 }

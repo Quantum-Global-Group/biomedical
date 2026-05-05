@@ -1,4 +1,5 @@
 import { AppShell } from "@/components/shell/AppShell";
+import { PreregistrationBanner } from "@/components/PreregistrationBanner";
 import { fetchCatalogsForServerComponent } from "@/lib/data/fetchCatalogsServer";
 import { InitializeClient } from "./InitializeClient";
 
@@ -7,6 +8,7 @@ export default async function InitializePage() {
 
   return (
     <AppShell active="/initialize">
+      <PreregistrationBanner page="initialize" />
       <div className="page-hero">
         <div>
           <div className="step">01 · INITIALIZE</div>

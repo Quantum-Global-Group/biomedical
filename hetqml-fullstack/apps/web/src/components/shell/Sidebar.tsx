@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { DashboardModeToggle } from "./DashboardModeToggle";
+
 const APP_VER = "v0.7.2";
 
 const WORKFLOW = [
@@ -82,18 +84,7 @@ export function Sidebar({ active }: SidebarProps) {
           </div>
         </Link>
       ))}
-      <div className="section-label">Appearance</div>
-      <div className="theme-row">
-        <div className="theme-btn" title="Light (preview)">
-          ☼ Light
-        </div>
-        <div className="theme-btn" title="Dark (preview)">
-          ☾ Dark
-        </div>
-        <div className="theme-btn active" title="Match system">
-          ▢ Auto
-        </div>
-      </div>
+      <DashboardModeToggle />
       <div className="status-bar">
         <span className="status-dot" />
         <span className="mono">ibm_torino</span>

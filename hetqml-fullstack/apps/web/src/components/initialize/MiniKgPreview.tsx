@@ -7,16 +7,22 @@ interface Props {
   selection: Selection;
 }
 
+type NodeKind = "compound" | "gene" | "disease" | "pathway" | "variant";
+
 interface GraphNode {
   id: string;
   label: string;
-  /** Node kind drives color + size. */
-  kind: "compound" | "gene" | "disease" | "pathway" | "variant";
+  kind: NodeKind;
+  /** Focus nodes (the user's actual disease/compound/gene picks) get larger
+   * size + brighter emissive + a subtle pulse. */
+  focus: boolean;
 }
 
 interface GraphEdge {
   source: string;
   target: string;
+  /** True when both endpoints are focus nodes — the "spine" of the run. */
+  primary: boolean;
 }
 
 function buildGraph(selection: Selection): {
@@ -28,46 +34,40 @@ function buildGraph(selection: Selection): {
   const disease = selection.disease || "Disease";
 
   const nodes: GraphNode[] = [
-    { id: "compound", label: compound, kind: "compound" },
-    { id: "gene", label: gene, kind: "gene" },
-    { id: "disease", label: disease, kind: "disease" },
-    { id: "pathway", label: "Pathway", kind: "pathway" },
-    { id: "variant", label: "Variant", kind: "variant" },
-    // a couple of co-target / co-disease neighbors so the layout has body
-    { id: "gene2", label: "Co-target", kind: "gene" },
-    { id: "disease2", label: "Co-disease", kind: "disease" },
+    { id: "compound", label: compound, kind: "compound", focus: true },
+    { id: "gene", label: gene, kind: "gene", focus: true },
+    { id: "disease", label: disease, kind: "disease", focus: true },
+    { id: "pathway", label: "Pathway", kind: "pathway", focus: false },
+    { id: "variant", label: "Variant", kind: "variant", focus: false },
+    { id: "gene2", label: "Co-target", kind: "gene", focus: false },
+    { id: "disease2", label: "Co-disease", kind: "disease", focus: false },
   ];
   const edges: GraphEdge[] = [
-    { source: "compound", target: "gene" },
-    { source: "gene", target: "disease" },
-    { source: "gene", target: "pathway" },
-    { source: "pathway", target: "disease" },
-    { source: "gene", target: "variant" },
-    { source: "compound", target: "gene2" },
-    { source: "gene2", target: "disease" },
-    { source: "disease", target: "disease2" },
+    { source: "compound", target: "gene", primary: true },
+    { source: "gene", target: "disease", primary: true },
+    { source: "gene", target: "pathway", primary: false },
+    { source: "pathway", target: "disease", primary: false },
+    { source: "gene", target: "variant", primary: false },
+    { source: "compound", target: "gene2", primary: false },
+    { source: "gene2", target: "disease", primary: false },
+    { source: "disease", target: "disease2", primary: false },
   ];
   return { nodes, edges };
 }
 
-/**
- * Hash string to a deterministic 3-vector seed in [-1, 1].
- * Lets layout be repeatable for the same selection.
- */
 function seedVec(s: string): [number, number, number] {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) {
     h ^= s.charCodeAt(i);
     h = Math.imul(h, 16777619);
   }
-  // unpack into 3 components
   const a = ((h >>> 0) % 1000) / 1000 - 0.5;
   const b = ((h >>> 10) % 1000) / 1000 - 0.5;
   const c = ((h >>> 20) % 1000) / 1000 - 0.5;
   return [a * 2, b * 2, c * 2];
 }
 
-const NODE_COLORS: Record<GraphNode["kind"], number> = {
+const NODE_COLORS: Record<NodeKind, number> = {
   compound: 0x6bb5b5, // teal
   gene: 0xd4a574, // gold
   disease: 0xe08474, // sienna
@@ -75,47 +75,62 @@ const NODE_COLORS: Record<GraphNode["kind"], number> = {
   variant: 0xe0a062, // amber
 };
 
-const NODE_RADIUS: Record<GraphNode["kind"], number> = {
-  compound: 0.32,
-  gene: 0.26,
-  disease: 0.32,
-  pathway: 0.22,
-  variant: 0.18,
+// Mirror the WebGL hex into CSS rgb for the legend swatches.
+const NODE_HEX_CSS: Record<NodeKind, string> = {
+  compound: "#6bb5b5",
+  gene: "#d4a574",
+  disease: "#e08474",
+  pathway: "#b0a0dd",
+  variant: "#e0a062",
 };
+
+const NODE_RADIUS: Record<NodeKind, number> = {
+  compound: 0.36,
+  gene: 0.30,
+  disease: 0.36,
+  pathway: 0.24,
+  variant: 0.20,
+};
+
+const FOCUS_BOOST = 1.18;
+
+const CANVAS_HEIGHT = 360;
 
 export function MiniKgPreview({ selection }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const labelLayerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const [stats, setStats] = useState<{ nodes: number; edges: number }>({
+    nodes: 0,
+    edges: 0,
+  });
 
-  const label =
-    selection.compound && selection.gene && selection.disease
-      ? `3D knowledge graph: ${selection.compound} → ${selection.gene} → ${selection.disease}`
-      : "3D knowledge graph preview";
+  const allChosen = !!(selection.compound && selection.gene && selection.disease);
+  const ariaLabel = allChosen
+    ? `3D knowledge graph: ${selection.compound} → ${selection.gene} → ${selection.disease}`
+    : "3D knowledge graph preview";
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
+    const labelLayer = labelLayerRef.current;
+    if (!container || !labelLayer) return;
     let cancelled = false;
     let cleanup: (() => void) | null = null;
 
-    // Dynamic import keeps `three` (~600KB) out of the initial bundle.
     import("three")
       .then((THREE) => {
-        if (cancelled || !containerRef.current) return;
+        if (cancelled || !containerRef.current || !labelLayerRef.current)
+          return;
         const host = containerRef.current;
+        const labels = labelLayerRef.current;
         const width = host.clientWidth || 320;
-        const height = host.clientHeight || 220;
+        const height = host.clientHeight || CANVAS_HEIGHT;
 
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x0e0b08);
+        scene.background = null; // CSS gradient shows through transparent canvas
 
-        const camera = new THREE.PerspectiveCamera(
-          45,
-          width / height,
-          0.1,
-          100,
-        );
-        camera.position.set(0, 0, 6);
+        const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 100);
+        camera.position.set(0, 0, 6.2);
 
         const renderer = new THREE.WebGLRenderer({
           antialias: true,
@@ -123,18 +138,24 @@ export function MiniKgPreview({ selection }: Props) {
         });
         renderer.setSize(width, height);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setClearColor(0x000000, 0);
         host.appendChild(renderer.domElement);
 
-        // Lights
-        scene.add(new THREE.AmbientLight(0xffffff, 0.55));
-        const dir = new THREE.DirectionalLight(0xffffff, 0.8);
-        dir.position.set(3, 4, 5);
-        scene.add(dir);
+        // 3-light setup: key (warm), fill (cool, low), rim (cool, edge-glow).
+        scene.add(new THREE.AmbientLight(0xffffff, 0.42));
+        const key = new THREE.DirectionalLight(0xfff1d6, 0.95);
+        key.position.set(3.5, 4, 5);
+        scene.add(key);
+        const fill = new THREE.DirectionalLight(0x88aacc, 0.4);
+        fill.position.set(-4, -1, 2);
+        scene.add(fill);
+        const rim = new THREE.DirectionalLight(0xffffff, 0.55);
+        rim.position.set(0, 0, -6);
+        scene.add(rim);
 
-        // Build graph data
         const { nodes, edges } = buildGraph(selection);
+        setStats({ nodes: nodes.length, edges: edges.length });
 
-        // Force-directed layout in 3D — simple repulsion + spring pass.
         type Sim = {
           pos: [number, number, number];
           vel: [number, number, number];
@@ -146,13 +167,12 @@ export function MiniKgPreview({ selection }: Props) {
             vel: [0, 0, 0],
           });
         }
-        const ITERATIONS = 140;
-        const REPULSION = 0.7;
-        const SPRING = 0.04;
-        const SPRING_LEN = 1.6;
+        const ITERATIONS = 160;
+        const REPULSION = 0.85;
+        const SPRING = 0.045;
+        const SPRING_LEN = 1.7;
         const DAMP = 0.85;
         for (let step = 0; step < ITERATIONS; step++) {
-          // Repulse all pairs
           for (let i = 0; i < nodes.length; i++) {
             const a = sims.get(nodes[i]!.id)!;
             for (let j = i + 1; j < nodes.length; j++) {
@@ -174,7 +194,6 @@ export function MiniKgPreview({ selection }: Props) {
               b.vel[2] -= fz;
             }
           }
-          // Spring along edges
           for (const e of edges) {
             const a = sims.get(e.source)!;
             const b = sims.get(e.target)!;
@@ -193,7 +212,6 @@ export function MiniKgPreview({ selection }: Props) {
             b.vel[1] -= fy;
             b.vel[2] -= fz;
           }
-          // Center gravity + integrate
           for (const n of nodes) {
             const s = sims.get(n.id)!;
             s.vel[0] -= s.pos[0] * 0.005;
@@ -208,60 +226,122 @@ export function MiniKgPreview({ selection }: Props) {
           }
         }
 
-        // Group that holds the whole graph so we can rotate it.
         const root = new THREE.Group();
         scene.add(root);
 
-        // Edges as line segments
-        const lineGeom = new THREE.BufferGeometry();
-        const linePositions: number[] = [];
-        for (const e of edges) {
-          const a = sims.get(e.source)!.pos;
-          const b = sims.get(e.target)!.pos;
-          linePositions.push(a[0], a[1], a[2], b[0], b[1], b[2]);
-        }
-        lineGeom.setAttribute(
-          "position",
-          new THREE.Float32BufferAttribute(linePositions, 3),
+        // Edges — split into primary (spine) and secondary so we can render
+        // the primary path with a brighter colour + larger glow pass.
+        const buildLines = (
+          subset: GraphEdge[],
+          color: number,
+          opacity: number,
+        ) => {
+          if (!subset.length) return null;
+          const geom = new THREE.BufferGeometry();
+          const positions: number[] = [];
+          for (const e of subset) {
+            const a = sims.get(e.source)!.pos;
+            const b = sims.get(e.target)!.pos;
+            positions.push(a[0], a[1], a[2], b[0], b[1], b[2]);
+          }
+          geom.setAttribute(
+            "position",
+            new THREE.Float32BufferAttribute(positions, 3),
+          );
+          const mat = new THREE.LineBasicMaterial({
+            color,
+            transparent: true,
+            opacity,
+          });
+          const seg = new THREE.LineSegments(geom, mat);
+          root.add(seg);
+          return { geom, mat, seg };
+        };
+        const primaryLines = buildLines(
+          edges.filter((e) => e.primary),
+          0xe7d4bb,
+          0.95,
         );
-        const lineMat = new THREE.LineBasicMaterial({
-          color: 0x6b5e52,
-          transparent: true,
-          opacity: 0.7,
-        });
-        const lines = new THREE.LineSegments(lineGeom, lineMat);
-        root.add(lines);
+        const secondaryLines = buildLines(
+          edges.filter((e) => !e.primary),
+          0x8a7a6b,
+          0.55,
+        );
 
-        // Nodes as Phong spheres + halo billboards
-        const sphereGeom = new THREE.SphereGeometry(1, 18, 14);
+        // Nodes
+        const sphereGeom = new THREE.SphereGeometry(1, 22, 18);
+        type NodeRender = {
+          mesh: InstanceType<typeof THREE.Mesh>;
+          mat: InstanceType<typeof THREE.MeshPhongMaterial>;
+          haloMat: InstanceType<typeof THREE.MeshBasicMaterial>;
+          baseEmissive: number;
+          focus: boolean;
+          label: HTMLDivElement;
+          pos: [number, number, number];
+        };
+        const renderNodes: NodeRender[] = [];
         for (const n of nodes) {
           const s = sims.get(n.id)!;
+          const baseEmissive = n.focus ? 0.3 : 0.14;
           const mat = new THREE.MeshPhongMaterial({
             color: NODE_COLORS[n.kind],
             emissive: NODE_COLORS[n.kind],
-            emissiveIntensity: 0.18,
-            shininess: 35,
+            emissiveIntensity: baseEmissive,
+            shininess: 60,
           });
           const mesh = new THREE.Mesh(sphereGeom, mat);
           mesh.position.set(s.pos[0], s.pos[1], s.pos[2]);
-          mesh.scale.setScalar(NODE_RADIUS[n.kind]);
+          const r = NODE_RADIUS[n.kind] * (n.focus ? FOCUS_BOOST : 1);
+          mesh.scale.setScalar(r);
           root.add(mesh);
 
-          // Halo: slightly larger, transparent, additive-style shell
-          const halo = new THREE.Mesh(
-            sphereGeom,
-            new THREE.MeshBasicMaterial({
-              color: NODE_COLORS[n.kind],
-              transparent: true,
-              opacity: 0.16,
-            }),
-          );
+          const haloMat = new THREE.MeshBasicMaterial({
+            color: NODE_COLORS[n.kind],
+            transparent: true,
+            opacity: n.focus ? 0.22 : 0.12,
+          });
+          const halo = new THREE.Mesh(sphereGeom, haloMat);
           halo.position.copy(mesh.position);
-          halo.scale.setScalar(NODE_RADIUS[n.kind] * 1.55);
+          halo.scale.setScalar(r * (n.focus ? 1.85 : 1.5));
           root.add(halo);
+
+          // HTML label, projected from world space each frame.
+          const label = document.createElement("div");
+          label.className = "kg-node-label";
+          label.textContent = n.label;
+          label.style.cssText = [
+            "position:absolute",
+            "transform:translate(-50%, calc(-100% - 8px))",
+            "padding:2px 7px",
+            "border-radius:3px",
+            `background:rgba(34,30,26,${n.focus ? "0.92" : "0.78"})`,
+            `border:1px solid ${NODE_HEX_CSS[n.kind]}55`,
+            `color:${n.focus ? "#f0eae0" : "#b8afa5"}`,
+            "font-size:11px",
+            "font-weight:" + (n.focus ? "600" : "500"),
+            "white-space:nowrap",
+            "pointer-events:none",
+            "letter-spacing:0.01em",
+            "box-shadow:0 2px 8px rgba(0,0,0,0.35)",
+            "max-width:140px",
+            "overflow:hidden",
+            "text-overflow:ellipsis",
+            "will-change:transform,opacity",
+          ].join(";");
+          labels.appendChild(label);
+
+          renderNodes.push({
+            mesh,
+            mat,
+            haloMat,
+            baseEmissive,
+            focus: n.focus,
+            label,
+            pos: [s.pos[0], s.pos[1], s.pos[2]],
+          });
         }
 
-        // Drag-to-orbit + pause auto-rotation briefly after interaction.
+        // Drag-to-orbit
         let autoYaw = 0;
         let manualYaw = 0;
         let manualPitch = 0;
@@ -295,7 +375,6 @@ export function MiniKgPreview({ selection }: Props) {
         renderer.domElement.addEventListener("pointerup", onPointerUp);
         renderer.domElement.addEventListener("pointerleave", onPointerUp);
 
-        // Resize handling
         const onResize = () => {
           if (!host) return;
           const w = host.clientWidth || width;
@@ -307,15 +386,51 @@ export function MiniKgPreview({ selection }: Props) {
         const ro = new ResizeObserver(onResize);
         ro.observe(host);
 
+        const projected = new THREE.Vector3();
+        const halfW = () => host.clientWidth / 2;
+        const halfH = () => host.clientHeight / 2;
+
         let frame = 0;
+        let t0 = performance.now();
         const animate = () => {
           frame = requestAnimationFrame(animate);
+          const t = (performance.now() - t0) / 1000;
           if (performance.now() > pauseUntil) {
             autoYaw += 0.0035;
           }
           root.rotation.y = autoYaw + manualYaw;
           root.rotation.x = manualPitch;
+
+          // Subtle pulse on focus node emissive — gives the "live" feel
+          // without animating the whole scene.
+          for (const r of renderNodes) {
+            if (r.focus) {
+              r.mat.emissiveIntensity =
+                r.baseEmissive + Math.sin(t * 1.6) * 0.08;
+            }
+          }
+
           renderer.render(scene, camera);
+
+          // Project node positions for HTML labels.
+          const w = halfW();
+          const h = halfH();
+          for (const r of renderNodes) {
+            projected.set(r.pos[0], r.pos[1], r.pos[2]);
+            // Apply the same rotation as `root` so the label tracks the node.
+            projected.applyEuler(root.rotation);
+            projected.project(camera);
+            const x = projected.x * w + w;
+            const y = -projected.y * h + h;
+            const visible = projected.z < 1 && projected.z > -1;
+            r.label.style.transform =
+              `translate(${x}px, ${y}px) translate(-50%, calc(-100% - 8px))`;
+            // Fade with depth so back-of-graph labels don't crowd the front.
+            const depthFade = visible
+              ? Math.max(0.25, 1 - Math.max(0, projected.z) * 1.1)
+              : 0;
+            r.label.style.opacity = String(depthFade);
+          }
         };
         animate();
 
@@ -326,10 +441,16 @@ export function MiniKgPreview({ selection }: Props) {
           renderer.domElement.removeEventListener("pointermove", onPointerMove);
           renderer.domElement.removeEventListener("pointerup", onPointerUp);
           renderer.domElement.removeEventListener("pointerleave", onPointerUp);
-          // Dispose GL resources
+          for (const r of renderNodes) {
+            r.label.remove();
+            r.mat.dispose();
+            r.haloMat.dispose();
+          }
           sphereGeom.dispose();
-          lineGeom.dispose();
-          lineMat.dispose();
+          primaryLines?.geom.dispose();
+          primaryLines?.mat.dispose();
+          secondaryLines?.geom.dispose();
+          secondaryLines?.mat.dispose();
           renderer.dispose();
           if (renderer.domElement.parentElement === host) {
             host.removeChild(renderer.domElement);
@@ -344,8 +465,15 @@ export function MiniKgPreview({ selection }: Props) {
       cancelled = true;
       if (cleanup) cleanup();
     };
-    // Re-run when selection changes so the graph relabels and re-lays-out.
   }, [selection.compound, selection.gene, selection.disease]);
+
+  const legend: { kind: NodeKind; label: string }[] = [
+    { kind: "compound", label: "Compound" },
+    { kind: "gene", label: "Gene" },
+    { kind: "disease", label: "Disease" },
+    { kind: "pathway", label: "Pathway" },
+    { kind: "variant", label: "Variant" },
+  ];
 
   return (
     <section className="panel">
@@ -360,41 +488,143 @@ export function MiniKgPreview({ selection }: Props) {
         A 3-hop subgraph from your selections, drawn before the run. Drag to
         orbit; the view auto-rotates after 2.5s of inactivity.
       </p>
+
+      {/* Legend strip — six tiny chips so colors carry meaning */}
       <div
-        ref={containerRef}
-        role="img"
-        aria-label={label}
         style={{
-          width: "100%",
-          height: 220,
-          background: "#0E0B08",
-          border: "1px solid var(--border)",
-          borderRadius: 4,
-          overflow: "hidden",
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 10,
+          margin: "0 0 10px",
+          fontSize: 11,
+          color: "var(--muted)",
+        }}
+      >
+        {legend.map((l) => (
+          <span
+            key={l.kind}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            <span
+              aria-hidden="true"
+              style={{
+                width: 10,
+                height: 10,
+                borderRadius: "50%",
+                background: NODE_HEX_CSS[l.kind],
+                boxShadow: `0 0 6px ${NODE_HEX_CSS[l.kind]}66`,
+                flexShrink: 0,
+              }}
+            />
+            {l.label}
+          </span>
+        ))}
+      </div>
+
+      <div
+        style={{
           position: "relative",
-          touchAction: "none",
+          width: "100%",
+          height: CANVAS_HEIGHT,
+          border: "1px solid var(--border)",
+          borderRadius: 6,
+          overflow: "hidden",
+          // Radial paper-toned gradient — sits inside the panel rather than
+          // contrasting with a hard black box.
+          background:
+            "radial-gradient(ellipse at 50% 40%, #221c16 0%, #14110e 65%, #0d0a08 100%)",
         }}
       >
         <div
-          className="threed-hint"
+          ref={containerRef}
+          role="img"
+          aria-label={ariaLabel}
           style={{
             position: "absolute",
-            top: 8,
-            left: 12,
-            fontSize: 10,
-            color: "var(--faint)",
-            fontFamily: "monospace",
-            zIndex: 2,
+            inset: 0,
+            touchAction: "none",
+          }}
+        />
+        {/* Label overlay — pointer-events: none so the canvas keeps drag */}
+        <div
+          ref={labelLayerRef}
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
             pointerEvents: "none",
+            overflow: "hidden",
+          }}
+        />
+        {/* Top-left status caption */}
+        <div
+          style={{
+            position: "absolute",
+            top: 10,
+            left: 12,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "4px 9px",
+            background: "rgba(20,17,14,0.72)",
+            border: "1px solid var(--border)",
+            borderRadius: 99,
+            fontSize: 10.5,
+            color: "var(--muted)",
+            fontFamily: "var(--font-mono), monospace",
+            letterSpacing: "0.03em",
+            backdropFilter: "blur(4px)",
           }}
         >
-          3D · {error ? `error · ${error}` : "drag to orbit · auto-rotates"}
+          <span
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              background: error ? "var(--sienna)" : "var(--teal)",
+              boxShadow: error
+                ? "0 0 6px var(--sienna)"
+                : "0 0 6px var(--teal)",
+            }}
+          />
+          {error
+            ? `error · ${error}`
+            : `${stats.nodes} nodes · ${stats.edges} edges`}
+        </div>
+        {/* Bottom-right interaction hint */}
+        <div
+          style={{
+            position: "absolute",
+            bottom: 10,
+            right: 12,
+            padding: "4px 9px",
+            background: "rgba(20,17,14,0.72)",
+            border: "1px solid var(--border)",
+            borderRadius: 99,
+            fontSize: 10.5,
+            color: "var(--faint)",
+            fontFamily: "var(--font-mono), monospace",
+            letterSpacing: "0.03em",
+            pointerEvents: "none",
+            backdropFilter: "blur(4px)",
+          }}
+        >
+          drag to orbit
         </div>
       </div>
+
       <div className="panel-footer">
         <span>hetionet-v1.0/edges.tsv</span>
         <span>
-          <em>path score (demo)</em>
+          {allChosen ? (
+            <em>focus path: compound → gene → disease</em>
+          ) : (
+            <em>preview · pick a disease/compound/gene to anchor</em>
+          )}
         </span>
       </div>
     </section>
