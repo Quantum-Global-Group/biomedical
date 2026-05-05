@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { isLiteMode, LITE_BADGE_LABEL } from "@/lib/liteMode";
+
 import { DashboardModeToggle } from "./DashboardModeToggle";
 
 const APP_VER = "v0.7.2";
@@ -85,19 +87,62 @@ export function Sidebar({ active }: SidebarProps) {
         </Link>
       ))}
       <DashboardModeToggle />
-      <div className="status-bar">
-        <span className="status-dot" />
-        <span className="mono">ibm_torino</span>
-        <div
-          style={{
-            color: "var(--faint)",
-            fontSize: 10,
-            marginTop: 4,
-          }}
-        >
-          queue: 2 · last verified (local dev)
-        </div>
-      </div>
+      {isLiteMode() ? <LiteBadge /> : <FullModeStatus />}
     </aside>
+  );
+}
+
+function LiteBadge() {
+  return (
+    <div
+      className="status-bar"
+      style={{ borderTop: "1px solid var(--gold, #C8A45A)" }}
+    >
+      <span
+        style={{
+          display: "inline-block",
+          width: 6,
+          height: 6,
+          borderRadius: "50%",
+          background: "var(--gold, #C8A45A)",
+          marginRight: 6,
+        }}
+        aria-hidden="true"
+      />
+      <span
+        className="mono"
+        style={{ color: "var(--gold, #C8A45A)", fontWeight: 600 }}
+      >
+        {LITE_BADGE_LABEL}
+      </span>
+      <div
+        style={{
+          color: "var(--faint)",
+          fontSize: 10,
+          marginTop: 4,
+          lineHeight: 1.4,
+        }}
+      >
+        Static build · no backend · mock data only
+      </div>
+    </div>
+  );
+}
+
+function FullModeStatus() {
+  return (
+    <div className="status-bar">
+      <span className="status-dot" />
+      <span className="mono">ibm_torino</span>
+      <div
+        style={{
+          color: "var(--faint)",
+          fontSize: 10,
+          marginTop: 4,
+        }}
+      >
+        queue: 2 · last verified (local dev)
+      </div>
+    </div>
   );
 }

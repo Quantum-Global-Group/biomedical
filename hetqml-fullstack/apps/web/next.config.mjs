@@ -20,9 +20,9 @@
 //   - apps/web/src/components/initialize/MiniKgPreview.tsx exports the
 //     three.js-backed 3D preview in full mode and the SVG schematic
 //     (./MiniKgPreviewLite.tsx) in lite mode.
-//   - apps/web/src/app/visualize/page.tsx returns the LiteUnavailablePanel
-//     in lite, dropping VisualizeClient + its 13 panels (and their three
-//     imports) from the lite trace.
+//   - apps/web/src/app/visualize/page.tsx returns the lite visualize
+//     experience in lite, dropping VisualizeClient + its 13 panels from
+//     the lite trace when VisualizeLite is used.
 //
 const isLite = process.env.BUILD_TARGET === "lite";
 
