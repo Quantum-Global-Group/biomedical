@@ -22,6 +22,7 @@ from hetqml_api.routers import (
     jobs,
     notes,
     ops,
+    preregistration,
     settings as settings_router,
 )
 from hetqml_api.settings import Settings, get_settings
@@ -49,6 +50,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["content-type"],
     )
 
+    # Stash the resolved Settings on app.state so routers that need
+    # per-instance config (e.g. preregistration.bootstrap_ci_path) can
+    # read it via deps.get_app_settings rather than the lru_cached
+    # module-level get_settings(), which can't be overridden per test.
+    app.state.settings = cfg
+
     store = InMemoryJobStore()
     app.state.job_store = store
     app.state.job_runner = Runner(store)
@@ -71,6 +78,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(decisions.router)
     app.include_router(notes.router)
     app.include_router(settings_router.router)
+    app.include_router(preregistration.router)
 
     @app.get("/health", tags=["meta"])
     async def health() -> dict[str, str]:

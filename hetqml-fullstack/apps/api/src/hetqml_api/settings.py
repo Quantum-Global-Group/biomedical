@@ -26,6 +26,14 @@ class Settings(BaseSettings):
     data_dir: Path = _default_data_dir()
     sqlite_filename: str = "hetqml.sqlite"
 
+    # Path (absolute or relative-to-CWD) to the manuscript-track bootstrap-CI
+    # report emitted by `scripts/run_bootstrap_ci.py` in the sibling
+    # `hybrid-qml-kg-poc` repo. Until the headline GPU run lands, the file
+    # does not exist and the bootstrap-CI endpoint returns a "pending" shape.
+    # Override with the env var BOOTSTRAP_CI_PATH (e.g. on Fly:
+    # `fly secrets set BOOTSTRAP_CI_PATH=/srv/hybrid-qml-kg-poc/docs/results/bootstrap_ci_analysis.md`).
+    bootstrap_ci_path: Path = Path("docs/results/bootstrap_ci_analysis.md")
+
     model_config = SettingsConfigDict(env_file=".env", env_prefix="", case_sensitive=False)
 
     @property

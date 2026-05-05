@@ -643,3 +643,85 @@ class OpsResources(CamelModel):
 
 class OpsSources(CamelModel):
     sources: list[DataSourceSnapshot]
+
+
+# --- Preregistration / bootstrap-CI status -------------------------------
+#
+# Wire format for `GET /preregistration/status`. The endpoint surfaces the
+# four hypothesis decision-rule states from
+# `hybrid-qml-kg-poc/preregistration/osf_preregistration_v1.md` §1.3 + §8.1:
+#
+#   H1   QSVC alone vs each classical baseline
+#   H1b  Stacking ensemble vs each classical baseline (headline)
+#   H2   Hardware-evaluated QSVC + Pauli Path ZNE within ±5pp of simulator
+#   H3   Sub-quadratic scaling on IBM Torino at 10/15/20 qubit dims
+#
+# The dashboard's headline-mode Experiment view consumes this and renders
+# either "pending" placeholders or actual {point, ciLow, ciHigh, supported}
+# triples once the GPU bootstrap-CI run lands `bootstrap_ci_analysis.md`.
+
+HypothesisId = Literal["H1", "H1b", "H2", "H3"]
+HypothesisDecisionStatus = Literal[
+    "pending_bootstrap",  # awaiting GPU bootstrap CI run (H1, H1b)
+    "pending_hardware",   # awaiting IBM Torino + ZNE runs (H2, H3)
+    "supported",          # 95% CI excludes zero in favorable direction
+    "not_supported",      # 95% CI does not exclude zero, or excludes against
+]
+
+
+class HypothesisStatus(CamelModel):
+    id: HypothesisId
+    label: str
+    decision_rule: str
+    status: HypothesisDecisionStatus
+    # Populated when status == "supported" or "not_supported".
+    point: float | None = None
+    ci_low: float | None = None
+    ci_high: float | None = None
+    supported: bool | None = None
+
+
+class PairedBootstrapBaseline(CamelModel):
+    """One row of the H1 / H1b paired-bootstrap conjunction table."""
+
+    name: str  # e.g. "RandomForest-Optimized"
+    point: float  # PR-AUC delta (subject - baseline)
+    ci_low: float
+    ci_high: float
+    supports: bool
+
+
+class BootstrapCIReport(CamelModel):
+    """Full per-hypothesis report — populated once the GPU run lands.
+
+    The conjunction-across-baselines decision rule (preregistration §8.1):
+    `conjunction_supported` is True iff every baseline's CI excludes zero
+    in the favorable direction.
+    """
+
+    hypothesis: HypothesisId
+    subject: str  # "QSVC alone" | "Stacking ensemble" | etc.
+    n_resamples: int
+    confidence: float
+    seed: int
+    baselines: list[PairedBootstrapBaseline]
+    conjunction_supported: bool
+    n_baselines_supporting: int
+    n_baselines_total: int
+
+
+class PreregistrationStatus(CamelModel):
+    """Top-level envelope for `GET /preregistration/status`.
+
+    `available=False` means `bootstrap_ci_analysis.md` does not exist on
+    disk yet — headline-mode UI renders "pending" placeholders. When True,
+    `h1` and `h1b` carry the parsed bootstrap-CI tables.
+    """
+
+    available: bool
+    source_path: str | None
+    git_commit: str | None = None
+    captured_utc: str | None = None
+    hypotheses: list[HypothesisStatus]
+    h1: BootstrapCIReport | None = None
+    h1b: BootstrapCIReport | None = None
