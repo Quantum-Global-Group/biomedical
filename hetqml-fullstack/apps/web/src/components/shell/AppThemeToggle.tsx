@@ -1,35 +1,21 @@
 "use client";
 
-/**
- * LiteThemeToggle
- *
- * Two-button segmented control for the lite skin: light vs dark. Only
- * rendered in lite builds (the full app has its own theme system).
- * Persistence + DOM mirroring is handled by `LiteThemeProvider`.
- */
-import { useLiteTheme, type LiteThemeName } from "@/lib/liteTheme/LiteThemeProvider";
+import { useAppTheme, type AppThemeName } from "@/lib/appTheme/AppThemeProvider";
 
-const OPTIONS: { id: LiteThemeName; label: string; glyph: string }[] = [
+const OPTIONS: { id: AppThemeName; label: string; glyph: string }[] = [
   { id: "light", label: "Light", glyph: "☼" },
   { id: "dark", label: "Dark", glyph: "☾" },
 ];
 
-export function LiteThemeToggle() {
-  const { theme, setTheme, hydrated } = useLiteTheme();
+/** Full app only — lite builds use `LiteThemeToggle`. */
+export function AppThemeToggle() {
+  const { theme, setTheme, hydrated } = useAppTheme();
 
   return (
     <div
-      className="theme-row lite-theme-toggle-row"
-      style={{
-        display: "flex",
-        gap: 4,
-        padding: 4,
-        borderRadius: 6,
-        border: "1px solid var(--border)",
-        background: "var(--paper-alt)",
-      }}
+      className="theme-row app-theme-toggle-inner"
       role="group"
-      aria-label="Theme"
+      aria-label="Color theme"
     >
       {OPTIONS.map((opt) => {
         const active = theme === opt.id;
@@ -40,6 +26,7 @@ export function LiteThemeToggle() {
             disabled={!hydrated}
             aria-pressed={active}
             onClick={() => setTheme(opt.id)}
+            className={`theme-btn${active ? " active" : ""}`}
             style={{
               flex: 1,
               display: "flex",
@@ -47,7 +34,7 @@ export function LiteThemeToggle() {
               justifyContent: "center",
               gap: 6,
               padding: "5px 10px",
-              border: "none",
+              border: "1px solid var(--border-soft)",
               borderRadius: 4,
               background: active ? "var(--card)" : "transparent",
               color: active ? "var(--ink)" : "var(--muted)",
@@ -56,8 +43,8 @@ export function LiteThemeToggle() {
               letterSpacing: "0.04em",
               cursor: hydrated ? "pointer" : "default",
               opacity: hydrated ? 1 : 0.6,
-              fontFamily: "var(--font-sans)",
-              transition: "background 0.15s, color 0.15s",
+              fontFamily: "var(--font-sans), sans-serif",
+              transition: "background 0.15s, color 0.15s, border-color 0.15s",
             }}
           >
             <span aria-hidden style={{ fontSize: 12 }}>

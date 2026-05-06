@@ -49,6 +49,21 @@ export function readGuardState(): PersistedGuardState | null {
   }
 }
 
+/**
+ * Stable, order-independent fingerprint for a toggle record.
+ * Used to skip redundant persists (which would churn `updatedAt` and spam
+ * `GUARD_STATE_EVENT`, forcing new `persisted`/toggles object identities in
+ * `useIntegrityGuards`).
+ */
+export function togglesContentFingerprint(toggles: Record<string, boolean>): string {
+  const keys = Object.keys(toggles).sort((a, b) => a.localeCompare(b));
+  let s = "";
+  for (const k of keys) {
+    s += `${k}:${toggles[k] ? 1 : 0}|`;
+  }
+  return s;
+}
+
 /** Persist the full toggle map. Silent no-op on server / quota error.
  *
  * Also dispatches a same-tab event so downstream subscribers
@@ -56,6 +71,14 @@ export function readGuardState(): PersistedGuardState | null {
  * which only fires across tabs. */
 export function writeGuardState(toggles: Record<string, boolean>): void {
   if (!isBrowser()) return;
+  const snapshot = readGuardState();
+  if (
+    snapshot !== null &&
+    togglesContentFingerprint(snapshot.toggles) === togglesContentFingerprint(toggles)
+  ) {
+    return;
+  }
+
   const payload: PersistedGuardState = {
     v: 1,
     updatedAt: new Date().toISOString(),

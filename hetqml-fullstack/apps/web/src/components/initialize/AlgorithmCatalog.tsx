@@ -117,7 +117,7 @@ export function AlgorithmCatalog({ selectedFamily, catalog }: Props) {
 
       <div>
         {visibleGroups.map((group) => {
-          const exp = expanded[group.name] ?? true;
+          const exp = expanded[group.name] ?? false;
           const total = groups.find((g) => g.name === group.name)?.rows.length;
           return (
             <div

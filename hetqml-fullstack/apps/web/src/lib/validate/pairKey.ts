@@ -9,6 +9,7 @@
  * key still uniquely identifies a pair.
  */
 
+import { findCompoundEntryByName } from "@/lib/data/compoundLookup";
 import type { CompoundEntry } from "@/lib/data/compounds";
 import type { DiseaseEntry } from "@/lib/data/diseases";
 import type { Selection } from "@/lib/investigation/recommendations";
@@ -32,7 +33,7 @@ export function lookupCompoundId(
   name: string,
   compounds: readonly CompoundEntry[],
 ): string {
-  const hit = compounds.find((c) => c.name === name);
+  const hit = findCompoundEntryByName(compounds, name);
   return hit?.drugbank ?? name;
 }
 

@@ -21,7 +21,10 @@ class Settings(BaseSettings):
     On Fly.io: set with `fly secrets set ALLOWED_ORIGINS=...`.
     """
 
-    allowed_origins: str = "http://localhost:3000"
+    # Browser Origin must match for POST preflight (OPTIONS). Include both
+    # host spellings; odd ports (Cursor / forwarded URLs) are handled by
+    # localhost regex in CORSMiddleware (see main.py).
+    allowed_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     ibm_crn: str = ""
     data_dir: Path = _default_data_dir()
     sqlite_filename: str = "hetqml.sqlite"

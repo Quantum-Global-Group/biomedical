@@ -102,7 +102,9 @@ CURATED_COMPOUNDS: list[CompoundEntry] = [
         drugbank_id="DB17789",
         therapeutic_class="small-molecule",
         fda_approved=False,
-        pubchem_cid=145953829,
+        # Name-resolved CID on PubChem; 145953829 is a ChEMBL synonym record
+        # without a 3D conformer (SDF?record_type=3d → 404).
+        pubchem_cid=147289591,
     ),
     CompoundEntry(
         name="Venetoclax",

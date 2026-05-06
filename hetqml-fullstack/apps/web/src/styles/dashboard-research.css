@@ -1,0 +1,146 @@
+/*
+ * Full research build (non-lite) — typography, sidebar, and chrome tuned
+ * for a calm, lab-grade dashboard. Scoped so HF lite export is unchanged.
+ */
+
+html:not([data-lite="true"]) body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html:not([data-lite="true"]) .sidebar {
+  padding: 26px 18px 24px;
+  background: linear-gradient(
+    175deg,
+    var(--paper-alt) 0%,
+    color-mix(in oklab, var(--paper-alt) 88%, var(--paper)) 55%,
+    var(--paper-alt) 100%
+  );
+  box-shadow: 2px 0 24px rgba(0, 0, 0, 0.12);
+}
+
+html:not([data-lite="true"])[data-app-theme="light"] .sidebar {
+  box-shadow: 2px 0 20px rgba(15, 23, 42, 0.06);
+}
+
+html:not([data-lite="true"]) .brand {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin: 0 0 4px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+html:not([data-lite="true"]) .brand-icon {
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  border-radius: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.15rem;
+  line-height: 1;
+  background: linear-gradient(
+    150deg,
+    color-mix(in oklab, var(--teal) 22%, var(--card)),
+    color-mix(in oklab, var(--teal-light) 65%, var(--card))
+  );
+  border: 1px solid var(--border-soft);
+  color: var(--teal);
+}
+
+html:not([data-lite="true"]) .brand-icon:empty::after {
+  content: "";
+  width: 13px;
+  height: 13px;
+  border: 2px solid currentColor;
+  border-radius: 3px;
+  transform: rotate(45deg);
+  opacity: 0.88;
+}
+
+html:not([data-lite="true"]) .brand-text {
+  min-width: 0;
+}
+
+html:not([data-lite="true"]) .brand-name {
+  font-family: var(--font-display), "Source Serif 4", Georgia, "Times New Roman",
+    serif;
+  font-size: 1.14rem;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.22;
+  color: var(--ink);
+}
+
+html:not([data-lite="true"]) .brand-tagline {
+  margin-top: 5px;
+  font-size: 0.625rem;
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+  color: var(--muted);
+  max-width: 12.5rem;
+}
+
+html:not([data-lite="true"]) .brand-ver {
+  margin-top: 7px;
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+html:not([data-lite="true"]) .section-label {
+  margin-top: 20px;
+  margin-bottom: 7px;
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+html:not([data-lite="true"]) .section-label:first-of-type {
+  margin-top: 4px;
+}
+
+html:not([data-lite="true"]) .nav-item {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+html:not([data-lite="true"]) .nav-item:hover {
+  background: color-mix(in oklab, var(--teal) 8%, transparent);
+}
+
+html:not([data-lite="true"]) .nav-item.active {
+  background: color-mix(in oklab, var(--teal) 14%, var(--card));
+  border: 1px solid color-mix(in oklab, var(--teal) 35%, var(--border-soft));
+}
+
+html:not([data-lite="true"]) .main {
+  min-height: 100vh;
+  padding: 20px 28px 40px;
+}
+
+@media (max-width: 900px) {
+  html:not([data-lite="true"]) .main {
+    padding: 16px 16px 32px;
+  }
+}
+
+body.sidebar-collapsed .sidebar .brand-tagline {
+  display: none;
+}
+
+/* Collapsed rail: keep the mark inside padding (full build uses a larger logo tile). */
+html:not([data-lite="true"]) body.sidebar-collapsed .sidebar .brand-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+}

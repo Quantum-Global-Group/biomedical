@@ -1,16 +1,32 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   type GuardCatalogEntry,
   type GuardLevel,
   levelFor,
 } from "@/lib/integrity/guardCatalog";
-import { writeGuardState } from "@/lib/integrity/guardState";
+import {
+  togglesContentFingerprint,
+  writeGuardState,
+} from "@/lib/integrity/guardState";
 import { useIntegrityGuards } from "@/lib/integrity/useIntegrityGuards";
 
 function levelPill(level: GuardLevel) {
   return `guard-level-pill ${level}`;
+}
+
+/** Deep boolean equality across key union — used when syncing `liveToggles`
+ * into local state without forcing a new object when values match. */
+function guardToggleRecordsEqual(
+  a: Record<string, boolean>,
+  b: Record<string, boolean>,
+): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const k of keys) {
+    if (a[k] !== b[k]) return false;
+  }
+  return true;
 }
 
 type PostureFilter = "all" | "critical" | "recommended" | "optional" | "off";
@@ -43,36 +59,49 @@ export function EvidencePosturePanel({
   // is no persisted state, persisted toggles otherwise.
   const [on, setOn] = useState<Record<string, boolean>>(liveToggles);
 
+  const liveTogglesRef = useRef(liveToggles);
+  liveTogglesRef.current = liveToggles;
+
+  const liveTogglesFingerprint = togglesContentFingerprint(liveToggles);
+
   // Re-sync local state when the catalog or remote toggles change (e.g.
   // catalog upgrades from fallback to live, or another tab toggled).
   useEffect(() => {
+    const live = liveTogglesRef.current;
     setOn((prev) => {
       // Preserve in-flight unsynced edits but pick up new keys.
-      const next = { ...liveToggles };
+      const next = { ...live };
       for (const id of Object.keys(prev)) {
-        if (id in liveToggles) next[id] = prev[id]!;
+        if (id in live) next[id] = prev[id]!;
       }
-      return next;
+      return guardToggleRecordsEqual(prev, next) ? prev : next;
     });
-    // Intentional: only react to liveToggles identity changes.
-  }, [liveToggles]);
+  }, [liveTogglesFingerprint]);
 
-  // Persist + dispatch on every change so downstream pages cascade.
-  useEffect(() => {
-    writeGuardState(on);
-  }, [on]);
+  const onRef = useRef(on);
+  onRef.current = on;
 
   // Group expansion state — keyed by group name.
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   useEffect(() => {
     setExpanded((prev) => {
+      let changed = false;
       const next = { ...prev };
       for (const g of groups) {
-        if (!(g.name in next)) next[g.name] = true;
+        if (!(g.name in next)) {
+          next[g.name] = false;
+          changed = true;
+        }
       }
-      return next;
+      return changed ? next : prev;
     });
   }, [groups]);
+
+  const onFingerprint = togglesContentFingerprint(on);
+
+  useEffect(() => {
+    writeGuardState(onRef.current);
+  }, [onFingerprint]);
 
   const [postureFilter, setPostureFilter] = useState<PostureFilter>("all");
 
@@ -313,12 +342,16 @@ export function EvidencePosturePanel({
                   <button
                     type="button"
                     className="guard-toggle"
+                    role="switch"
+                    aria-checked={rowOn}
                     aria-label={`toggle ${g.label}`}
                     onClick={(e) => {
                       e.stopPropagation();
                       setOn((m) => ({ ...m, [g.id]: !m[g.id] }));
                     }}
-                  />
+                  >
+                    <span className="guard-toggle-thumb" aria-hidden="true" />
+                  </button>
                   <div className="guard-content">
                     <div className="guard-name-row">
                       <span className="guard-name">{g.label}</span>
@@ -333,7 +366,12 @@ export function EvidencePosturePanel({
                           : "Optional — informational; off does not gate audit."}
                     </div>
                   </div>
-                  <span className="guard-source">config/integrity.yaml</span>
+                  <span
+                    className="guard-source"
+                    title="config/integrity.yaml"
+                  >
+                    config/integrity.yaml
+                  </span>
                   <span className={`guard-status-text${rowOn ? " on" : " off"}`}>
                     {rowOn ? "on" : "off"}
                   </span>

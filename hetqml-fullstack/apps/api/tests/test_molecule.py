@@ -54,8 +54,8 @@ async def test_get_molecule_sdf_caches_on_disk(tmp_path):
     app, calls = _build_app(tmp_path, status_code=200, body=SDF_FIXTURE)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        r1 = await client.get("/molecule/145953829")
-        r2 = await client.get("/molecule/145953829")
+        r1 = await client.get("/molecule/147289591")
+        r2 = await client.get("/molecule/147289591")
 
     assert r1.status_code == 200
     assert r1.text == SDF_FIXTURE
@@ -65,7 +65,7 @@ async def test_get_molecule_sdf_caches_on_disk(tmp_path):
     # Cache hit on the second call — PubChem should be touched only once.
     assert calls["count"] == 1
 
-    cache_file = tmp_path / "pubchem-sdf" / "145953829.sdf"
+    cache_file = tmp_path / "pubchem-sdf" / "147289591.sdf"
     assert cache_file.exists()
     assert cache_file.read_text() == SDF_FIXTURE
 

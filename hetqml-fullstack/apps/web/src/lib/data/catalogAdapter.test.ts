@@ -50,6 +50,39 @@ describe("adapter helpers", () => {
     });
   });
 
+  it("fills PubChem CID from local seed when API omits it (demo compounds)", () => {
+    expect(
+      adaptCompound({
+        name: "Inaxaplin",
+        drugbankId: "DB17789",
+        therapeuticClass: "small-molecule",
+        fdaApproved: false,
+        pubchemCid: null,
+      }),
+    ).toMatchObject({
+      name: "Inaxaplin",
+      drugbank: "DB17789",
+      pubchemCid: 147289591,
+    });
+  });
+
+  it("keeps API PubChem CID when present (Venetoclax)", () => {
+    expect(
+      adaptCompound({
+        name: "Venetoclax",
+        drugbankId: "DB11581",
+        therapeuticClass: "antineoplastic",
+        fdaApproved: true,
+        pubchemCid: 49846579,
+      }),
+    ).toEqual({
+      name: "Venetoclax",
+      drugbank: "DB11581",
+      category: "antineoplastic",
+      pubchemCid: 49846579,
+    });
+  });
+
   it("prefixes ncbiId with NCBIGene: when missing", () => {
     expect(
       adaptGene({ symbol: "APOL1", ncbiId: "8542", category: "immune" }),

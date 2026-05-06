@@ -18,6 +18,7 @@ import {
 } from "@/lib/api/client";
 import type { InitialSettings } from "@/lib/data/fetchSettingsServer";
 import { DEFAULT_SETTINGS } from "@/lib/settings/defaults";
+import { citationLine, versionLabel } from "@/lib/branding";
 import { isLiteMode } from "@/lib/liteMode";
 
 const IS_LITE = isLiteMode();
@@ -1819,12 +1820,12 @@ function AboutPanel() {
   }, []);
 
   const rows: Array<[string, string]> = [
-    ["Version", "v0.7.2 · Hetionet · QML"],
+    ["Version", versionLabel()],
     ["Build", process.env.NEXT_PUBLIC_BUILD_SHA ?? "dev"],
     ["Hetionet", "v1.0 · DOI 10.7554/eLife.26726"],
     ["License", "Apache 2.0 (dashboard) · CC0 1.0 (Hetionet data)"],
     ["Repository", "github.com/quantumGlobalGroup/acm"],
-    ["Citation", "Anderson et al. (2026) Hetionet QML Dashboard v0.7.2"],
+    ["Citation", citationLine()],
     ["Support", "support@quantumgg.dev · docs.quantumgg.dev"],
     ["Browser", diag.ua],
     ["localStorage", diag.storage],

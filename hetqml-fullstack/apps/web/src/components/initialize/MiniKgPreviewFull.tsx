@@ -143,7 +143,6 @@ export function MiniKgPreviewFull({ selection }: Props) {
         scene.background = null; // CSS gradient shows through transparent canvas
 
         const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 100);
-        camera.position.set(0, 0, 6.2);
 
         const renderer = new THREE.WebGLRenderer({
           antialias: true,
@@ -239,7 +238,41 @@ export function MiniKgPreviewFull({ selection }: Props) {
           }
         }
 
+        const HALO_EXTENT = 1.9;
+        let cx = 0;
+        let cy = 0;
+        let cz = 0;
+        for (const n of nodes) {
+          const p = sims.get(n.id)!.pos;
+          cx += p[0];
+          cy += p[1];
+          cz += p[2];
+        }
+        cx /= nodes.length;
+        cy /= nodes.length;
+        cz /= nodes.length;
+
+        let maxExtent = 0;
+        for (const n of nodes) {
+          const p = sims.get(n.id)!.pos;
+          const dx = p[0] - cx;
+          const dy = p[1] - cy;
+          const dz = p[2] - cz;
+          const dist = Math.hypot(dx, dy, dz);
+          const baseR = NODE_RADIUS[n.kind] * (n.focus ? FOCUS_BOOST : 1);
+          maxExtent = Math.max(maxExtent, dist + baseR * HALO_EXTENT);
+        }
+
+        const fovRad = (40 * Math.PI) / 180;
+        const halfTan = Math.tan(fovRad / 2);
+        const fitZ = Math.max(5.5, (maxExtent * 1.22) / halfTan);
+        camera.position.set(0, 0, fitZ);
+        camera.near = Math.max(0.05, fitZ / 500);
+        camera.far = Math.max(160, fitZ * 5);
+        camera.updateProjectionMatrix();
+
         const root = new THREE.Group();
+        root.position.set(-cx, -cy, -cz);
         scene.add(root);
 
         // Edges — split into primary (spine) and secondary so we can render
@@ -465,9 +498,15 @@ export function MiniKgPreviewFull({ selection }: Props) {
           renderer.setSize(w, h);
           camera.aspect = w / h;
           camera.updateProjectionMatrix();
+          renderer.render(scene, camera);
         };
         const ro = new ResizeObserver(onResize);
         ro.observe(host);
+        queueMicrotask(onResize);
+        requestAnimationFrame(() => {
+          onResize();
+          requestAnimationFrame(onResize);
+        });
 
         const projected = new THREE.Vector3();
         const halfW = () => host.clientWidth / 2;
@@ -499,9 +538,7 @@ export function MiniKgPreviewFull({ selection }: Props) {
           const w = halfW();
           const h = halfH();
           for (const r of renderNodes) {
-            projected.set(r.pos[0], r.pos[1], r.pos[2]);
-            // Apply the same rotation as `root` so the label tracks the node.
-            projected.applyEuler(root.rotation);
+            r.mesh.getWorldPosition(projected);
             projected.project(camera);
             const x = projected.x * w + w;
             const y = -projected.y * h + h;

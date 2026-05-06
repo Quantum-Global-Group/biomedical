@@ -29,6 +29,5 @@ export const LITE_BADGE_LABEL = "Demo · HF Space";
 export const LITE_BANNER_BODY =
   "This is the public lite build — no backend, no IBM auth, no decision " +
   "logging. Initialize / Experiment / Validate render with mock data so " +
-  "you can click through the workflow. The full version (live FastAPI + " +
-  "IBM Quantum BYOK + decision audit) lives in the project's Fly.io / " +
-  "internal deployment.";
+  "you can click through the workflow. Hetionet Full (live FastAPI + " +
+  "IBM Quantum BYOK + decision audit) is the Fly.io / internal deployment.";

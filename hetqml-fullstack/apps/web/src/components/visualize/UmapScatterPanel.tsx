@@ -70,8 +70,6 @@ export function UmapScatterPanel({
   // every mouse move. The DOM node is owned by the canvas overlay.
   const tooltipRef = useRef<HTMLDivElement>(null);
 
-  // Build the point list once per (embedding, selection) — embedding
-  // is parallel to ranking so the join is index-based.
   const points: ScatterPoint[] = useMemo(() => {
     const ranking = result.candidateSpotlight.ranking;
     const embedding = result.embedding;
@@ -95,6 +93,26 @@ export function UmapScatterPanel({
     result.embedding,
     selectedCompound,
     selectedDisease,
+  ]);
+
+  const scatterGapExplanation = useMemo(() => {
+    if (IS_LITE) return "";
+    const ranking = result.candidateSpotlight.ranking;
+    const emb = result.embedding;
+    if (emb == null) {
+      return "Job JSON is missing JobResult.embedding (null/undefined). Re-run once the visualization API responds, then reload.";
+    }
+    if (emb.length === 0) {
+      return "Embedding array exists but contains no rows.";
+    }
+    if (ranking.length === 0 || points.length === 0) {
+      return "Candidate ranking is empty or does not overlap the embedding slice — start a fresh investigation.";
+    }
+    return "";
+  }, [
+    result.candidateSpotlight.ranking,
+    result.embedding,
+    points.length,
   ]);
 
   useEffect(() => {
@@ -278,9 +296,15 @@ export function UmapScatterPanel({
           camera.left = -halfH * a;
           camera.right = halfH * a;
           camera.updateProjectionMatrix();
+          renderer.render(scene, camera);
         };
         const ro = new ResizeObserver(onResize);
         ro.observe(stage);
+        queueMicrotask(onResize);
+        requestAnimationFrame(() => {
+          onResize();
+          requestAnimationFrame(onResize);
+        });
 
         let frame = 0;
         const t0 = performance.now();
@@ -343,8 +367,12 @@ export function UmapScatterPanel({
           ? "● error"
           : phase === "no-data"
             ? IS_LITE
-              ? "○ lite mode"
-              : "○ no embedding"
+              ? "lite mode · scatter omitted"
+              : !result.embedding?.length && result.embedding != null
+                ? "embedding empty"
+                : result.embedding == null
+                  ? "embedding missing"
+                  : "scatter unavailable"
             : "○ idle";
 
   return (
@@ -405,8 +433,10 @@ export function UmapScatterPanel({
               position: "absolute",
               inset: 0,
               display: "flex",
+              flexDirection: "column",
               alignItems: "center",
               justifyContent: "center",
+              gap: 8,
               color: phase === "error" ? "var(--amber)" : "var(--faint)",
               fontSize: 12,
               letterSpacing: "0.06em",
@@ -417,14 +447,30 @@ export function UmapScatterPanel({
               textAlign: "center",
             }}
           >
-            {phase === "loading" && "loading three.js…"}
-            {phase === "no-data" &&
-              (IS_LITE
-                ? "lite build · scatter omitted"
-                : "no embedding coords for this run")}
-            {phase === "error" &&
-              `unable to render scatter · ${errorMessage ?? "unknown error"}`}
-            {phase === "idle" && "preparing scatter…"}
+            <span>
+              {phase === "loading" && "loading Three.js scatter…"}
+              {phase === "no-data" &&
+                (IS_LITE
+                  ? "Lite build skips this WebGL panel."
+                  : "UMAP scatter unavailable for this payload.")}
+              {phase === "error" &&
+                `Unable to render WebGL scatter — ${errorMessage ?? "unknown error"}`}
+              {phase === "idle" && "preparing scatter plot…"}
+            </span>
+            {phase === "no-data" && scatterGapExplanation && (
+              <span
+                style={{
+                  textTransform: "none",
+                  letterSpacing: "0.03em",
+                  fontSize: 11,
+                  lineHeight: 1.45,
+                  color: "var(--muted)",
+                  maxWidth: 420,
+                }}
+              >
+                {scatterGapExplanation}
+              </span>
+            )}
           </div>
         )}
         <div

@@ -2,7 +2,7 @@
 
 // MoleculeViewerPanel — real 3Dmol.js viewer + PubChem proxy fetch.
 //
-// Engine is loaded via a runtime `import("3dmol")` so:
+// Engine is loaded via a runtime `import("3dmol/build/3Dmol.js")` so:
 //   - SSR never touches the WebGL/jQuery globals 3Dmol injects
 //   - the lite (HF Space) build can DCE the entire module graph by
 //     keeping the dynamic-import literal behind an `IS_LITE` guard
@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getMoleculeSdf } from "@/lib/api/client";
+import { findCompoundEntryByName } from "@/lib/data/compoundLookup";
 import { useCatalogs } from "@/lib/data/useCatalogs";
 import { emitVizSync } from "@/lib/visualize/syncBus";
 
@@ -79,10 +80,12 @@ export function MoleculeViewerPanel({ compound, disease, autoSync }: Props) {
     "idle" | "loading" | "ready" | "error" | "no-cid"
   >("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  /** Whether failure happened before SDF fetch (3Dmol chunk) vs API/PubChem. */
+  const [errorKind, setErrorKind] = useState<"engine" | "sdf" | null>(null);
 
   const catalogs = useCatalogs();
   const compoundEntry = useMemo(
-    () => catalogs.compounds.find((c) => c.name === compound) ?? null,
+    () => findCompoundEntryByName(catalogs.compounds, compound),
     [catalogs.compounds, compound],
   );
   const cid = compoundEntry?.pubchemCid ?? null;
@@ -110,8 +113,10 @@ export function MoleculeViewerPanel({ compound, disease, autoSync }: Props) {
     if (!stage) return;
 
     let cancelled = false;
+    let resizeRo: ResizeObserver | null = null;
     setPhase("loading");
     setErrorMessage(null);
+    setErrorKind(null);
 
     (async () => {
       try {
@@ -119,7 +124,7 @@ export function MoleculeViewerPanel({ compound, disease, autoSync }: Props) {
         // loads when this panel actually renders. The library expects
         // window/document — guarded by `'use client'` + the IS_LITE
         // bypass above.
-        const moduleNs = (await import("3dmol")) as unknown;
+        const moduleNs = (await import("3dmol/build/3Dmol.js")) as unknown;
         const $3Dmol = (moduleNs as { default?: ThreeDMolGlobal })
           .default ?? (moduleNs as ThreeDMolGlobal);
         if (cancelled) return;
@@ -137,6 +142,7 @@ export function MoleculeViewerPanel({ compound, disease, autoSync }: Props) {
         } catch (err) {
           if (cancelled) return;
           setPhase("error");
+          setErrorKind("sdf");
           setErrorMessage(
             err instanceof Error ? err.message : String(err),
           );
@@ -149,16 +155,44 @@ export function MoleculeViewerPanel({ compound, disease, autoSync }: Props) {
         viewer.zoomTo();
         viewer.render();
         viewer.zoom(1.1, 600);
+
+        const onResize = () => {
+          if (cancelled) return;
+          const v = viewerRef.current;
+          if (!v) return;
+          try {
+            v.resize();
+            v.render();
+          } catch {
+            /* 3Dmol can throw if the canvas is mid-teardown */
+          }
+        };
+        resizeRo = new ResizeObserver(() => queueMicrotask(onResize));
+        resizeRo.observe(stage);
+        queueMicrotask(onResize);
+        requestAnimationFrame(() => {
+          onResize();
+          requestAnimationFrame(onResize);
+        });
+
         setPhase("ready");
       } catch (err) {
         if (cancelled) return;
         setPhase("error");
-        setErrorMessage(err instanceof Error ? err.message : String(err));
+        const msg = err instanceof Error ? err.message : String(err);
+        const looksEngine =
+          /module|3dmol|chunk|dynamic import|loading|turbopack|ssr|cannot find module/i.test(
+            msg,
+          );
+        setErrorKind(looksEngine ? "engine" : "sdf");
+        setErrorMessage(msg);
       }
     })();
 
     return () => {
       cancelled = true;
+      resizeRo?.disconnect();
+      resizeRo = null;
       const viewer = viewerRef.current;
       if (viewer) {
         try {
@@ -331,13 +365,19 @@ export function MoleculeViewerPanel({ compound, disease, autoSync }: Props) {
               pointerEvents: "none",
             }}
           >
-            {phase === "loading" && "loading 3Dmol.js…"}
+            {phase === "loading" && "fetching molecule SDF · 3Dmol.js readying…"}
             {phase === "no-cid" &&
               (IS_LITE
-                ? "lite build · 3D viewer omitted"
-                : "no PubChem CID for this compound")}
+                ? "Lite build omits WebGL molecule viewer components."
+                : catalogs.error
+                  ? `Catalog unavailable (${catalogs.loaded ? "partial" : "seed"} load) · PubChem CID could not be resolved.`
+                  : compound?.trim()
+                    ? `No curated PubChem CID for “${compound.trim()}”. Try the picker’s exact spelling, or reconnect if catalogs failed to load.`
+                    : "Select a compound to load a 3D structure.")}
             {phase === "error" &&
-              `unable to load 3D structure · ${errorMessage ?? "unknown error"}`}
+              (errorKind === "engine"
+                ? `3Dmol viewer failed to start · ${errorMessage ?? "unknown error"}`
+                : `molecule proxy / PubChem request failed · ${errorMessage ?? "unknown error"}`)}
             {phase === "idle" && "preparing viewer…"}
           </div>
         )}

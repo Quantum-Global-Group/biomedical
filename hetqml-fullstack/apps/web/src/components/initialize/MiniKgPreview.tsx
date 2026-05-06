@@ -29,6 +29,48 @@ import { MiniKgPreview as MiniKgPreviewLite } from "./MiniKgPreviewLite";
 
 const IS_LITE = process.env.NEXT_PUBLIC_LITE_MODE === "true";
 
+const KG_PREVIEW_PLACEHOLDER_H = 360;
+
+function MiniKgFullChunkLoadingPlaceholder() {
+  return (
+    <div
+      aria-busy="true"
+      aria-label="Loading Three.js KG preview chunk"
+      style={{
+        width: "100%",
+        minHeight: KG_PREVIEW_PLACEHOLDER_H,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 10,
+        borderRadius: 6,
+        border: "1px solid var(--border-soft)",
+        background:
+          "radial-gradient(ellipse at center, #1a1612 0%, #0f0c09 80%)",
+        color: "var(--muted)",
+        fontSize: 12,
+        textAlign: "center",
+        padding: "24px",
+      }}
+    >
+      <span
+        style={{
+          fontFamily: "var(--font-mono), monospace",
+          letterSpacing: "0.06em",
+          textTransform: "uppercase",
+          color: "var(--faint)",
+        }}
+      >
+        loading knowledge-graph preview…
+      </span>
+      <span style={{ fontSize: 11, lineHeight: 1.45 }}>
+        Fetching Three.js (~first visit). Panels fill once the viewer chunk arrives.
+      </span>
+    </div>
+  );
+}
+
 interface Props {
   selection: Selection;
 }
@@ -52,7 +94,10 @@ if (!IS_LITE) {
       import("./MiniKgPreviewFull").then((m) => ({
         default: m.MiniKgPreviewFull,
       })),
-    { ssr: false },
+    {
+      ssr: false,
+      loading: () => <MiniKgFullChunkLoadingPlaceholder />,
+    },
   );
 } else {
   // Stub used only as a type-level placeholder; the dispatcher's early

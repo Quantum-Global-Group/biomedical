@@ -53,5 +53,6 @@ describe("lite-mode copy", () => {
     expect(LITE_BANNER_BODY).toContain("IBM");
     expect(LITE_BANNER_BODY).toContain("decision");
     expect(LITE_BANNER_BODY).toContain("mock data");
+    expect(LITE_BANNER_BODY).toContain("Hetionet Full");
   });
 });

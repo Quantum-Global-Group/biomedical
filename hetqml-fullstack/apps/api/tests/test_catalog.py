@@ -25,6 +25,16 @@ async def test_compounds_catalog_hits_1552(client):
     assert "fdaApproved" in sample
 
 
+async def test_compounds_curated_entries_include_pubchem_cid(client):
+    """Visualize · 3Dmol needs pubchemCid on demo rows (wire = camelCase)."""
+    res = await client.get("/catalog/compounds")
+    assert res.status_code == 200
+    by_name = {item["name"]: item for item in res.json()["items"]}
+    assert by_name["Inaxaplin"]["pubchemCid"] == 147289591
+    assert by_name["Venetoclax"]["pubchemCid"] == 49846579
+    assert by_name["Losartan"]["pubchemCid"] == 3961
+
+
 async def test_genes_catalog_hits_20945(client):
     res = await client.get("/catalog/genes")
     assert res.status_code == 200

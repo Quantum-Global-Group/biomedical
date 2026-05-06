@@ -11,7 +11,8 @@ import type {
   ApiGeneEntry,
   ApiMetaedgeEntry,
 } from "@/lib/api/client";
-import type { CompoundEntry } from "./compounds";
+import { findCompoundEntryByName } from "@/lib/data/compoundLookup";
+import { COMPOUNDS, type CompoundEntry } from "./compounds";
 import type { DiseaseEntry } from "./diseases";
 import type { GeneEntry } from "./genes";
 import type { MetaedgeEntry } from "./metaedges";
@@ -26,11 +27,19 @@ export function adaptDisease(api: ApiDiseaseEntry): DiseaseEntry {
 }
 
 export function adaptCompound(api: ApiCompoundEntry): CompoundEntry {
+  let pubchemCid = api.pubchemCid ?? null;
+  // If the wire payload omits CID (older API, proxy strip, or partial
+  // JSON), fall back to the tiny local seed list so Visualize · 3Dmol
+  // keeps working for demo compounds like Inaxaplin / Metformin.
+  if (pubchemCid == null) {
+    const seed = findCompoundEntryByName(COMPOUNDS, api.name);
+    if (seed?.pubchemCid != null) pubchemCid = seed.pubchemCid;
+  }
   return {
     name: api.name,
     drugbank: api.drugbankId,
     category: api.therapeuticClass,
-    pubchemCid: api.pubchemCid ?? null,
+    pubchemCid,
   };
 }
 

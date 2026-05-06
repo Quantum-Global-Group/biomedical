@@ -33,6 +33,18 @@ describe("buildPairKey", () => {
     ).toBe("Mystery Drug::DOID:2451");
   });
 
+  it("resolves compounds case-insensitively after trim", () => {
+    expect(
+      buildPairKey(
+        {
+          compound: "  inaxaplin ",
+          disease: "Hypertension-attributed ESKD",
+        },
+        { compounds, diseases },
+      ),
+    ).toBe("DB17789::DOID:2451");
+  });
+
   it("falls back on both sides when catalogs are empty", () => {
     expect(
       buildPairKey(

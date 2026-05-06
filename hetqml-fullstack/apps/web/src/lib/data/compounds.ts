@@ -9,7 +9,12 @@ export interface CompoundEntry {
 }
 
 export const COMPOUNDS: readonly CompoundEntry[] = [
-  { name: "Inaxaplin", drugbank: "DB12015", category: "targeted-therapy", pubchemCid: 145953829 },
+  {
+    name: "Inaxaplin",
+    drugbank: "DB17789",
+    category: "small-molecule",
+    pubchemCid: 147289591,
+  },
   { name: "Empagliflozin", drugbank: "DB09038", category: "metabolic", pubchemCid: 11949646 },
   { name: "Deucravacitinib", drugbank: "DB16650", category: "immunology", pubchemCid: 134821691 },
   { name: "Venetoclax", drugbank: "DB11581", category: "oncology", pubchemCid: 49846579 },

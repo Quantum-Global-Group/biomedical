@@ -3,18 +3,45 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import {
+  APP_RELEASE,
+  productBrandName,
+  productTagline,
+} from "@/lib/branding";
 import { isLiteMode, LITE_BADGE_LABEL } from "@/lib/liteMode";
 
 import { DashboardModeToggle } from "./DashboardModeToggle";
 import { LiteThemeToggle } from "./LiteThemeToggle";
+import { AppThemeToggle } from "./AppThemeToggle";
 
-const APP_VER = "v0.7.2";
+/** Sidebar Demo/Headline switch — off until we surface it in UX again. */
+const SHOW_DASHBOARD_MODE_IN_SIDEBAR = false;
 
 const WORKFLOW = [
-  { href: "/initialize", num: "01", title: "Initialize", sub: "Define investigation" },
-  { href: "/experiment", num: "02", title: "Experiment", sub: "Produce evidence" },
-  { href: "/validate", num: "03", title: "Validate", sub: "Trust the result" },
-  { href: "/visualize", num: "04", title: "Visualize", sub: "Inspect visually" },
+  {
+    href: "/initialize",
+    num: "01",
+    title: "Initialize",
+    sub: "Protocol & cohort definition",
+  },
+  {
+    href: "/experiment",
+    num: "02",
+    title: "Experiment",
+    sub: "Evidence generation",
+  },
+  {
+    href: "/validate",
+    num: "03",
+    title: "Validate",
+    sub: "Reproducibility & trust",
+  },
+  {
+    href: "/visualize",
+    num: "04",
+    title: "Visualize",
+    sub: "Structures & embeddings",
+  },
 ] as const;
 
 const SYSTEM = [
@@ -34,6 +61,7 @@ export function Sidebar({ active }: SidebarProps) {
   // Owns the collapse state so AppShell can stay a server component.
   // Toggle flips a body class — the export CSS already handles the rest.
   const [collapsed, setCollapsed] = useState(false);
+  const tagline = productTagline();
 
   useEffect(() => {
     document.body.classList.toggle("sidebar-collapsed", collapsed);
@@ -44,20 +72,28 @@ export function Sidebar({ active }: SidebarProps) {
 
   return (
     <aside className="sidebar">
-      <button
-        type="button"
-        className="sidebar-toggle"
-        title="Collapse sidebar"
-        aria-label="Toggle sidebar"
-        onClick={() => setCollapsed((c) => !c)}
-      >
-        ‹
-      </button>
+      <div className="sidebar-header-row">
+        <button
+          type="button"
+          className="sidebar-toggle"
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-expanded={!collapsed}
+          aria-label="Toggle sidebar"
+          onClick={() => setCollapsed((c) => !c)}
+        >
+          ‹
+        </button>
+      </div>
       <div className="brand">
-        <div className="brand-icon">◎</div>
-        <div>
-          <div className="brand-name">Hetionet · QML</div>
-          <div className="brand-ver">{APP_VER}</div>
+        <div className="brand-icon" aria-hidden>
+          {isLiteMode() ? "◎" : null}
+        </div>
+        <div className="brand-text">
+          <div className="brand-name">{productBrandName()}</div>
+          {tagline ? (
+            <div className="brand-tagline">{tagline}</div>
+          ) : null}
+          <div className="brand-ver">{APP_RELEASE}</div>
         </div>
       </div>
       <div className="section-label">Workflow</div>
@@ -87,12 +123,22 @@ export function Sidebar({ active }: SidebarProps) {
           </div>
         </Link>
       ))}
-      <DashboardModeToggle />
-      {isLiteMode() ? (
-        <div style={{ marginTop: 12 }}>
-          <LiteThemeToggle />
+      {SHOW_DASHBOARD_MODE_IN_SIDEBAR ? (
+        <div className="sidebar-dashboard-mode">
+          <DashboardModeToggle />
         </div>
       ) : null}
+      {isLiteMode() ? (
+        <div style={{ marginTop: 12 }}>
+          <div className="section-label">Appearance</div>
+          <LiteThemeToggle />
+        </div>
+      ) : (
+        <>
+          <div className="section-label">Appearance</div>
+          <AppThemeToggle />
+        </>
+      )}
       {isLiteMode() ? <LiteBadge /> : <FullModeStatus />}
     </aside>
   );
@@ -137,17 +183,18 @@ function LiteBadge() {
 
 function FullModeStatus() {
   return (
-    <div className="status-bar">
+    <div className="status-bar full-build-status">
       <span className="status-dot" />
-      <span className="mono">ibm_torino</span>
+      <span className="mono">Connected build</span>
       <div
         style={{
           color: "var(--faint)",
           fontSize: 10,
-          marginTop: 4,
+          marginTop: 5,
+          lineHeight: 1.45,
         }}
       >
-        queue: 2 · last verified (local dev)
+        Live API · catalogs & jobs · optional IBM Quantum path
       </div>
     </div>
   );

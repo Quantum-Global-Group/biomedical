@@ -80,6 +80,13 @@ async def test_completed_job_emits_full_result(client):
     assert len(spotlight["ranking"]) == 6
     assert len(spotlight["reasons"]) >= 2
 
+    embedding = result["embedding"]
+    assert embedding is not None
+    assert len(embedding) == len(spotlight["ranking"])
+    for row in embedding:
+        assert isinstance(row, list) and len(row) == 2
+        assert isinstance(row[0], (int, float)) and isinstance(row[1], (int, float))
+
     # integrity guards (matches catalog count)
     assert len(result["integrityGuards"]) == 23
 

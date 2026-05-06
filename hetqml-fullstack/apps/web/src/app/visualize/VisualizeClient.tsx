@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getJob, listDecisions, type DecisionRecord, type Job } from "@/lib/api/client";
 import { getLastJobId } from "@/lib/sessions/lastJob";
 import { useVisiblePoll } from "@/lib/polling/useVisiblePoll";
 import { useCatalogs } from "@/lib/data/useCatalogs";
+import { findCompoundEntryByName } from "@/lib/data/compoundLookup";
 import { buildPairKey, lookupCompoundId } from "@/lib/validate/pairKey";
 import {
   SHORTCUT_EVENT,
@@ -18,7 +20,6 @@ import { InterpretationPanel } from "@/components/visualize/InterpretationPanel"
 import { KgViewer3DPanel } from "@/components/visualize/KgViewer3DPanel";
 import { MetricStrip } from "@/components/visualize/MetricStrip";
 import { ModelAgreementPanel } from "@/components/visualize/ModelAgreementPanel";
-import { MoleculeViewerPanel } from "@/components/visualize/MoleculeViewerPanel";
 import { PathDiagramPanel } from "@/components/visualize/PathDiagramPanel";
 import { ProvenanceTimelinePanel } from "@/components/visualize/ProvenanceTimelinePanel";
 import { QualityFlagsPanel } from "@/components/visualize/QualityFlagsPanel";
@@ -28,6 +29,14 @@ import {
   VIZ_SYNC_EVENT,
   type VizSyncDetail,
 } from "@/lib/visualize/syncBus";
+
+const MoleculeViewerPanel = dynamic(
+  () =>
+    import("@/components/visualize/MoleculeViewerPanel").then((m) => ({
+      default: m.MoleculeViewerPanel,
+    })),
+  { ssr: false },
+);
 
 const POLL_BASE_MS = 1500;
 const POLL_MAX_MS = 12_000;
@@ -123,7 +132,7 @@ export function VisualizeClient({
   // canonical pair key.
   const catalogs = useCatalogs();
   const compoundEntry = job
-    ? catalogs.compounds.find((c) => c.name === job.selection.compound) ?? null
+    ? findCompoundEntryByName(catalogs.compounds, job.selection.compound)
     : null;
 
   // Pair-scoped decision history — pulled lazily so the export bundle can
