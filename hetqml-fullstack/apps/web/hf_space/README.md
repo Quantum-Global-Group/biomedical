@@ -101,7 +101,7 @@ Or use the Hub CLI: `uv tool install hf` then `hf download quantumGlobalGroup/He
 
 Workflow **`.github/workflows/huggingface-hetionet-lite.yml`** at the biomedical repo root runs **`pnpm --filter hetqml-web export:hf`** then `scripts/sync_hf_space_lite.py` (same as running it locally).
 
-**Triggers:** `workflow_dispatch`, or push to **`main`** when `hetqml-fullstack/apps/web/**` changes.
+**Triggers:** `workflow_dispatch`, or push to **`main`** or **`roc/preregistration-tighten`** when `hetqml-fullstack/apps/web/**` or the workflow / sync script changes (drop **tighten** from the workflow after it merges to **main**).
 
 Locally after export:
 
