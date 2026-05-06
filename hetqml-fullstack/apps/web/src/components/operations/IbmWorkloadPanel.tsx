@@ -168,7 +168,9 @@ function Connected({ ibm }: { ibm: IbmWorkloadResponse }) {
         </div>
         {ibm.recentJobs.map((j) => (
           <div key={j.id} className="ibm-recent-job">
-            <span className="mono">{j.id}</span>
+            <span className="mono" title={j.id}>
+              {j.id}
+            </span>
             <span>{j.backend}</span>
             <span
               className={`ops-job-status${j.status === "completed" ? " done" : j.status === "failed" ? " failed" : ""}`}

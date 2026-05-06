@@ -945,6 +945,13 @@ class Runner:
             algo: AlgoResult | None = None
             if not self._synthetic_only:
                 ibm_token, ibm_crn = await self._resolve_ibm_credentials()
+                ibm_backend = ""
+                if self._settings_store is not None:
+                    try:
+                        s = await self._settings_store.get("default")
+                        ibm_backend = (s.quantum.default_backend or "").strip()
+                    except Exception:
+                        ibm_backend = ""
                 # The ML dispatcher is CPU-bound (numpy + Aer); offload to
                 # a worker thread so polling endpoints stay snappy.
                 algo = await asyncio.to_thread(
@@ -953,6 +960,7 @@ class Runner:
                     running.selection,
                     ibm_token=ibm_token,
                     ibm_crn=ibm_crn,
+                    ibm_backend=ibm_backend,
                 )
             else:
                 # Test-mode: keep the previous "sleep 2s, return synthetic"

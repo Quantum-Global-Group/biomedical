@@ -14,14 +14,17 @@ primary_region = "iad"
   auto_start_machines = true
   min_machines_running = 0
 
-  [http_service.checks]
-    [http_service.checks.health]
-      grace_period = "10s"
-      interval = "30s"
-      method = "get"
-      path = "/health"
-      protocol = "http"
-      timeout = "5s"
+  [[http_service.checks]]
+    grace_period = "45s"
+    interval = "30s"
+    method = "get"
+    path = "/health"
+    protocol = "http"
+    timeout = "5s"
+
+[deploy]
+  # sklearn/numpy import + sqlite init on cold 512 MB VMs can exceed short defaults.
+  wait_timeout = "15m"
 
 [[vm]]
   size = "shared-cpu-1x"

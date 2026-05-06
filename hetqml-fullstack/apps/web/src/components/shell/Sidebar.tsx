@@ -135,11 +135,12 @@ export function Sidebar({ active }: SidebarProps) {
         </div>
       ) : (
         <>
+          <FullModeStatus />
           <div className="section-label">Appearance</div>
           <AppThemeToggle />
         </>
       )}
-      {isLiteMode() ? <LiteBadge /> : <FullModeStatus />}
+      {isLiteMode() ? <LiteBadge /> : null}
     </aside>
   );
 }

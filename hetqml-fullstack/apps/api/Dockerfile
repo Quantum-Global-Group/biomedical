@@ -11,11 +11,13 @@ COPY --from=ghcr.io/astral-sh/uv:0.4.20 /uv /usr/local/bin/uv
 
 WORKDIR /app
 
-# Install dependencies first for better layer caching
+# Lockfile-only layer: deps change less often than `src/`.
 COPY pyproject.toml uv.lock* ./
-RUN uv sync --frozen --no-dev || uv sync --no-dev
+RUN uv sync --frozen --no-dev --no-install-project \
+    || uv sync --no-dev --no-install-project
 
 COPY src ./src
+RUN uv sync --frozen --no-dev || uv sync --no-dev
 
 ENV PATH="/app/.venv/bin:${PATH}"
 

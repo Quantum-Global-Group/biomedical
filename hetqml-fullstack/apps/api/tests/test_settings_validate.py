@@ -1,12 +1,13 @@
 """Tests for the IBM connection stub validator.
 
-`POST /settings/ibm/validate` is a stub: it inspects the persisted
-`IbmConnectionSettings` and flips `validated=True` when the required
-fields (crn + instanceName) are non-empty. Anything missing → 400 with
-the missing-field list. Real IBM Cloud round-trips ship later.
+``POST /settings/ibm/validate`` checks persisted ``IbmConnectionSettings``:
+missing crn/instanceName (when no api token) → 400; stub path or live IBM
+probe flips ``validated=True`` as appropriate.
 """
 
 from __future__ import annotations
+
+from unittest.mock import MagicMock, patch
 
 
 async def test_validate_ibm_400_when_unconfigured(client):
@@ -72,3 +73,33 @@ async def test_validate_ibm_persists_validated_flag(client):
     got = await client.get("/settings")
     assert got.status_code == 200
     assert got.json()["ibmConnection"]["validated"] is True
+
+
+async def test_validate_ibm_live_path_allows_missing_instance_when_token_mocked(
+    client,
+):
+    await client.put(
+        "/settings",
+        json={
+            "ibmConnection": {
+                "crn": "crn:v1:bluemix:public:quantum:us-east:a/abc::",
+                "apiToken": "ibm-test-token",
+                "validated": False,
+                "planTier": None,
+                "instanceName": None,
+            },
+        },
+    )
+    mock_backend = MagicMock()
+    mock_backend.name = "ibm_fake_torino"
+    mock_service = MagicMock()
+    mock_service.least_busy = MagicMock(return_value=mock_backend)
+    with patch(
+        "qiskit_ibm_runtime.QiskitRuntimeService",
+        return_value=mock_service,
+    ):
+        res = await client.post("/settings/ibm/validate")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ibmConnection"]["validated"] is True
+    assert body["ibmConnection"]["instanceName"] == "ibm_fake_torino"

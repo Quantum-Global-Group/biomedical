@@ -18,7 +18,8 @@ Three families:
 
   - quantum: same as hybrid but the kernel matrix is computed on IBM
     Quantum hardware via qiskit-ibm-runtime when both `ibm_token` and
-    `ibm_crn` are non-empty. Falls back to the local Aer simulator
+    `ibm_crn` are non-empty. Uses `Settings.quantum.default_backend`
+    when set; falls back to the local Aer simulator
     otherwise (and `used_real_hardware=False` flips so the UI can label
     the run accordingly).
 """

@@ -47,7 +47,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         CORSMiddleware,
         allow_origins=cfg.cors_origins,
         # Any port on localhost / 127.0.0.1 (e.g. Next on 3000, Cursor 52xxx).
-        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+        # Include IPv6 loopback — some dev setups open Next at http://[::1]:3000.
+        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$",
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["*"],

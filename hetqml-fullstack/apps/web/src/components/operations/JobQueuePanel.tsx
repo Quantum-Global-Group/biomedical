@@ -40,7 +40,9 @@ export function JobQueuePanel({ jobs }: Props) {
         ) : (
           jobs.queue.map((q) => (
             <div key={q.id} className="ops-job-row">
-              <span className="ops-job-id">{q.id}</span>
+              <span className="ops-job-id" title={q.id}>
+                {q.id}
+              </span>
               <span className="ops-job-detail">
                 {q.type}
                 <span className="sub">

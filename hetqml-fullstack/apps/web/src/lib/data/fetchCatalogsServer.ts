@@ -46,6 +46,8 @@ export interface InitialCatalogs {
 }
 
 const REVALIDATE_SECONDS = 60;
+/** Per-feed ceiling so a dead/slow API cannot wedge `/initialize` RSC indefinitely. */
+const CATALOG_FETCH_TIMEOUT_MS = 12_000;
 
 function serverApiBase(): string {
   return process.env.API_INTERNAL_URL ?? "http://localhost:8000";
@@ -54,6 +56,7 @@ function serverApiBase(): string {
 async function getJson<T>(path: string): Promise<T> {
   const res = await fetch(`${serverApiBase()}${path}`, {
     headers: { "content-type": "application/json" },
+    signal: AbortSignal.timeout(CATALOG_FETCH_TIMEOUT_MS),
     next: { revalidate: REVALIDATE_SECONDS, tags: ["catalogs", `catalog:${path}`] },
   });
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);

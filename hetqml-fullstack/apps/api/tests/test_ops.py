@@ -1,11 +1,13 @@
 """Operations endpoint smoke tests.
 
-These verify wire-shape and that the daily-seeded canned provider returns
-stable output within a request window. They do not assert exact numerical
-values — those drift day-over-day on purpose.
+`/ops/jobs` is backed by persisted investigation jobs. ``/ops/ibm-workload``
+merges persisted Settings BYOK plus optional IBM Quantum probes; remaining
+`/ops/*` feeds use the daily-seeded canned provider.
 """
 
 from __future__ import annotations
+
+import asyncio
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -16,9 +18,13 @@ from hetqml_api.settings import Settings
 
 
 @pytest.fixture
-def app_with_ibm():
+def app_with_ibm(tmp_path):
     """Override the default app to wire in a configured IBM CRN."""
-    settings = Settings(allowed_origins="http://localhost:3000", ibm_crn="crn:test:ibm-quantum")
+    settings = Settings(
+        allowed_origins="http://localhost:3000",
+        ibm_crn="crn:test:ibm-quantum",
+        data_dir=tmp_path,
+    )
     application = create_app(settings)
     application.state.ops_provider = CannedOpsProvider(ibm_crn=settings.ibm_crn)
     return application
@@ -68,6 +74,43 @@ async def test_ops_ibm_workload_configured(client_ibm):
     assert len(body["backendAccess"]) == 4
 
 
+async def test_ops_ibm_workload_awaiting_validation(client):
+    res = await client.get("/settings")
+    assert res.status_code == 200
+    body = res.json()
+    body["ibmConnection"]["crn"] = "crn:v1:validation:pending"
+    body["ibmConnection"]["validated"] = False
+    put = await client.put("/settings", json=body)
+    assert put.status_code == 200
+    wl = await client.get("/ops/ibm-workload")
+    assert wl.status_code == 200
+    out = wl.json()
+    assert out["configured"] is True
+    assert out["validated"] is False
+    assert out["usage"] is None
+
+
+async def test_ops_ibm_workload_from_settings_validated_no_token(client):
+    res = await client.get("/settings")
+    assert res.status_code == 200
+    body = res.json()
+    body["ibmConnection"]["crn"] = "crn:v1:test:fromsettings"
+    body["ibmConnection"]["validated"] = True
+    body["ibmConnection"]["apiToken"] = ""
+    body["ibmConnection"]["instanceName"] = "labeled-instance"
+    put = await client.put("/settings", json=body)
+    assert put.status_code == 200
+    wl = await client.get("/ops/ibm-workload")
+    assert wl.status_code == 200
+    out = wl.json()
+    assert out["configured"] is True
+    assert out["validated"] is True
+    assert out["usage"] is None
+    assert out["instance"] == "labeled-instance"
+    assert out["recentJobs"] == []
+    assert out["backendAccess"] == []
+
+
 async def test_ops_backends_shape(client):
     res = await client.get("/ops/backends")
     assert res.status_code == 200
@@ -80,18 +123,46 @@ async def test_ops_backends_shape(client):
         assert 0.95 < b["readoutFidelity"] < 1.0
 
 
-async def test_ops_jobs_shape(client):
+async def test_ops_jobs_empty_when_no_runs(client):
     res = await client.get("/ops/jobs")
     assert res.status_code == 200
     body = res.json()
-    assert len(body["queue"]) == 5
-    assert len(body["history"]) == 11
-    for q in body["queue"]:
-        assert q["status"] in {"queued", "running", "transpiling", "measuring"}
-        assert 0 <= q["progressPct"] <= 100
-    for h in body["history"]:
-        assert h["family"] in {"classical", "hybrid", "quantum"}
-        assert h["status"] in {"completed", "failed"}
+    assert body["queue"] == []
+    assert body["history"] == []
+
+
+async def test_ops_jobs_reflects_completed_investigation(client):
+    res = await client.post(
+        "/investigations/run",
+        json={
+            "selection": {
+                "disease": "Hypertension-attributed ESKD",
+                "compound": "Inaxaplin",
+                "gene": "APOL1",
+                "metaedge": "CtD · Compound–treats–Disease",
+            },
+            "run_path": {"mode": "quick", "family": "classical"},
+        },
+    )
+    assert res.status_code == 200
+    job_id = res.json()["id"]
+    for _ in range(100):
+        poll = await client.get(f"/jobs/{job_id}")
+        assert poll.status_code == 200
+        if poll.json()["status"] == "completed":
+            break
+        await asyncio.sleep(0.05)
+    ops = await client.get("/ops/jobs")
+    assert ops.status_code == 200
+    hist = ops.json()["history"]
+    assert len(hist) >= 1
+    match = next((h for h in hist if h["id"] == job_id), None)
+    assert match is not None
+    assert match["family"] == "classical"
+    assert match["status"] == "completed"
+    for row in hist:
+        assert row["family"] in {"classical", "hybrid", "quantum"}
+        assert row["status"] in {"completed", "failed"}
 
 
 async def test_ops_resources_shape(client):

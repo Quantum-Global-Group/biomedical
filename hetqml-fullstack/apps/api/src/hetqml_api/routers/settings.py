@@ -8,23 +8,27 @@ GET on a never-set owner returns the default `UserSettings` (never 404).
 PUT replaces the whole document; the page already round-trips the full
 shape, so this matches the UX.
 
-`POST /settings/ibm/validate` is a stub validator. Real IBM Cloud
-validation requires a network round-trip to ``runtime.quantum.ibm.com``
-and the qiskit-ibm-runtime SDK; v1 simply checks that the operator has
-filled in the three required fields (token, crn, instance) and flips the
-``validated`` flag so downstream panels (Operations → IBM Workload) can
-move out of the "awaiting validation" state. Mirrors the
-``CannedOpsProvider`` shape — canned but the wire contract matches what
-the real implementation will return.
+`POST /settings/ibm/validate`: without an API token it checks field
+completeness (crn + instance label). With a token + crn it probes IBM via
+``qiskit-ibm-runtime``, flips ``validated``, and on success may overwrite
+``instance_name`` with a detected backend id so downstream panels
+(Operations → IBM Workload) can move past "awaiting validation".
+
+`POST /settings/ibm/smoke-test` submits a minimal sampler circuit using
+persisted credentials (does not change validation flags).
 """
 
 from __future__ import annotations
+
+import asyncio
+import functools
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from hetqml_api.deps import get_settings_store
 from hetqml_api.persistence.protocols import SettingsStore
-from hetqml_api.schemas import UserSettings
+from hetqml_api.schemas import IbmSmokeTestResult, UserSettings
+from hetqml_api.settings_ibm_smoke import run_ibm_smoke_sync
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -55,9 +59,10 @@ async def validate_ibm_connection(
     Two modes:
 
       - **Field check** (no api_token persisted): require ``crn`` and
-        ``instanceName`` to be non-empty. Flips ``validated`` to True
-        when both are present. 400 lists the missing fields.
-      - **Live check** (api_token + crn persisted): instantiates a
+        ``instanceName`` to be non-empty. Flips ``validated`` to True when
+        both are present. 400 lists the missing fields.
+      - **Live check** (api_token + crn persisted): ``instanceName`` may
+        be empty; instantiates a
         ``QiskitRuntimeService`` against IBM Cloud and pulls the backend
         list. A successful call flips ``validated`` to True; a connection
         failure returns 400 with the upstream error so the UI can surface
@@ -72,8 +77,12 @@ async def validate_ibm_connection(
     missing: list[str] = []
     if not ibm.crn.strip():
         missing.append("crn")
-    if ibm.instance_name is None or not ibm.instance_name.strip():
-        missing.append("instanceName")
+    # Instance label is optional when validating with a real API token: the live
+    # IBM probe overwrites instance_name with a backend identifier on success.
+    # Without a token we only do field completeness and keep requiring a label.
+    if not ibm.api_token.strip():
+        if ibm.instance_name is None or not ibm.instance_name.strip():
+            missing.append("instanceName")
     if missing:
         raise HTTPException(
             status_code=400,
@@ -88,8 +97,6 @@ async def validate_ibm_connection(
         try:
             # The qiskit-ibm-runtime call is synchronous — push to a worker
             # thread so the asyncio loop isn't blocked by the network RTT.
-            import asyncio
-
             from qiskit_ibm_runtime import QiskitRuntimeService
 
             def _probe() -> str:
@@ -128,3 +135,38 @@ async def validate_ibm_connection(
         }
     )
     return await store.put(DEFAULT_OWNER, updated)
+
+
+@router.post("/ibm/smoke-test", response_model=IbmSmokeTestResult)
+async def ibm_smoke_test(store: SettingsStore = Depends(get_settings_store)) -> IbmSmokeTestResult:
+    """Run a minimal Runtime sampler job using **persisted** IBM credentials.
+
+    Does not modify settings. Requires a stored API token and CRN (save the
+    form first if needed). Prefer a cloud simulator when available; otherwise
+    tries ``quantum.default_backend``, then IBM least-busy.
+    """
+    settings = await store.get(DEFAULT_OWNER)
+    ibm = settings.ibm_connection
+    if not ibm.crn.strip() or not ibm.api_token.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="IBM smoke test needs a saved API token and CRN.",
+        )
+    preferred_backend = (settings.quantum.default_backend or "").strip()
+    try:
+        payload = await asyncio.to_thread(
+            functools.partial(
+                run_ibm_smoke_sync,
+                ibm.api_token.strip(),
+                ibm.crn.strip(),
+                preferred_backend=preferred_backend,
+            ),
+        )
+        return IbmSmokeTestResult.model_validate(payload)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"IBM smoke test failed: {exc}",
+        ) from exc

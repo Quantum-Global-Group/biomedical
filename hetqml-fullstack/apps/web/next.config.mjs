@@ -26,9 +26,30 @@
 //
 const isLite = process.env.BUILD_TARGET === "lite";
 
+// In `next dev`, route browser fetches through Next rewrites so requests stay
+// same-origin (fixes WSL2: Windows localhost:3000 → WSL Next, but JS calling
+// localhost:8000 hits Windows, not uvicorn in WSL).
+const devApiRewrites =
+  !isLite && process.env.NODE_ENV === "development"
+    ? {
+        async rewrites() {
+          const target =
+            process.env.HETQML_DEV_API_PROXY_TARGET?.replace(/\/$/, "") ||
+            "http://127.0.0.1:8000";
+          return [
+            {
+              source: "/__hetqml_api/:path*",
+              destination: `${target}/:path*`,
+            },
+          ];
+        },
+      }
+    : {};
+
 const nextConfig = {
   output: isLite ? "export" : "standalone",
   reactStrictMode: true,
+  ...devApiRewrites,
 
   // HF Space serves directories: /initialize -> /initialize/index.html.
   // Demo build keeps clean URLs so Next can route via the standalone server.

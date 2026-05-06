@@ -51,7 +51,28 @@ export function OperationsClient() {
               : "Operations is the systems-side view: are the quantum backends healthy, are upstream data sources fresh, what jobs are running, what's been spent. The Initialize → Visualize pipeline trusts that everything here is green."}
           </p>
         </div>
-        <StatusPill health={ops.health} />
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "flex-end",
+            gap: 10,
+          }}
+        >
+          {!IS_LITE ? (
+            <button
+              type="button"
+              className="btn"
+              disabled={ops.refreshing}
+              aria-busy={ops.refreshing}
+              title="Pull the latest Operations data (queues, ETAs, IBM workload)"
+              onClick={() => void ops.refresh()}
+            >
+              {ops.refreshing ? "Refreshing…" : "Refresh feeds"}
+            </button>
+          ) : null}
+          <StatusPill health={ops.health} />
+        </div>
       </div>
 
       <MetricStrip jobs={ops.jobs} cost={ops.cost} />

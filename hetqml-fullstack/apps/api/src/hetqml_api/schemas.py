@@ -507,6 +507,18 @@ class IbmConnectionSettings(CamelModel):
     instance_name: str | None = None
 
 
+class IbmSmokeTestResult(CamelModel):
+    """Result of ``POST /settings/ibm/smoke-test`` — minimal runtime execution."""
+
+    backend: str
+    runtime_job_id: str
+    shots: int
+    elapsed_ms: int
+    simulator: bool = False
+    outcome_summary: str
+    message: str = "Smoke test completed"
+
+
 class NotificationSettings(CamelModel):
     email: bool = True
     slack: bool = False

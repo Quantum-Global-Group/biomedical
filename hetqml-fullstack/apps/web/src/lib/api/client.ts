@@ -271,12 +271,28 @@ function apiBase(): string {
   if (typeof window === "undefined") {
     return process.env.API_INTERNAL_URL ?? "http://localhost:8000";
   }
+  const lite =
+    process.env.NEXT_PUBLIC_LITE_MODE === "true" ||
+    process.env.NEXT_PUBLIC_LITE_MODE === "1";
+  const disableProxy =
+    process.env.NEXT_PUBLIC_DISABLE_DEV_API_PROXY === "true" ||
+    process.env.NEXT_PUBLIC_DISABLE_DEV_API_PROXY === "1";
+  if (
+    process.env.NODE_ENV === "development" &&
+    !lite &&
+    !disableProxy
+  ) {
+    return "/__hetqml_api";
+  }
   return process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${apiBase()}${path}`, {
     ...init,
+    signal:
+      init?.signal ??
+      AbortSignal.timeout(90_000),
     headers: {
       "content-type": "application/json",
       ...(init?.headers ?? {}),
@@ -817,6 +833,24 @@ export function saveSettings(body: UserSettings): Promise<UserSettings> {
  * are non-empty.  400 with a missing-fields detail when something's empty.
  * Returns the full updated `UserSettings` document so the client can
  * overwrite local state without a follow-up GET. */
+export interface IbmSmokeTestResult {
+  backend: string;
+  runtimeJobId: string;
+  shots: number;
+  elapsedMs: number;
+  simulator: boolean;
+  outcomeSummary: string;
+  message: string;
+}
+
+export function smokeTestIbmConnection(): Promise<IbmSmokeTestResult> {
+  // Runtime jobs can queue; align with API smoke timeout (~5 min).
+  return request<IbmSmokeTestResult>("/settings/ibm/smoke-test", {
+    method: "POST",
+    signal: AbortSignal.timeout(360_000),
+  });
+}
+
 export function validateIbmConnection(): Promise<UserSettings> {
   return request<UserSettings>("/settings/ibm/validate", {
     method: "POST",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchIbmWorkload,
   fetchOpsAlerts,
@@ -61,6 +61,10 @@ export interface OpsState {
   error: string | null;
   /** Timestamp of the most recent successful refresh (any feed). */
   lastUpdated: Date | null;
+  /** True during a manual or tab-visibility-triggered bulk refetch (full build only). */
+  refreshing: boolean;
+  /** Re-fetch all `/ops/*` feeds now (queues, ETAs, health, etc.). No-op in lite mode. */
+  refresh: () => Promise<void>;
 }
 
 /**
@@ -95,7 +99,21 @@ export function useOps(intervalMs: number = POLL_INTERVAL_MS): OpsState {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const cancelled = useRef(false);
+  const tickRef = useRef<(() => Promise<void>) | null>(null);
+
+  const refresh = useCallback(async () => {
+    if (IS_LITE) return;
+    const fn = tickRef.current;
+    if (!fn) return;
+    setRefreshing(true);
+    try {
+      await fn();
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
 
   // Lite (HF Space) build — no backend to poll. Mark loaded so the
   // page shows the seed fixtures as the canonical view; the per-feed
@@ -204,6 +222,8 @@ export function useOps(intervalMs: number = POLL_INTERVAL_MS): OpsState {
       if (anyOk) setLastUpdated(new Date());
     };
 
+    tickRef.current = tick;
+
     let timer: ReturnType<typeof setTimeout> | null = null;
     let delay = intervalMs;
     const MAX_DELAY = 60_000;
@@ -250,6 +270,7 @@ export function useOps(intervalMs: number = POLL_INTERVAL_MS): OpsState {
 
     return () => {
       cancelled.current = true;
+      tickRef.current = null;
       if (timer) clearTimeout(timer);
       timer = null;
       if (typeof document !== "undefined") {
@@ -273,6 +294,8 @@ export function useOps(intervalMs: number = POLL_INTERVAL_MS): OpsState {
       alerts,
       error,
       lastUpdated,
+      refreshing,
+      refresh,
     }),
     [
       loaded,
@@ -287,6 +310,8 @@ export function useOps(intervalMs: number = POLL_INTERVAL_MS): OpsState {
       alerts,
       error,
       lastUpdated,
+      refreshing,
+      refresh,
     ],
   );
 }

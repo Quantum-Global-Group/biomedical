@@ -1,17 +1,20 @@
 """Operations endpoints — eight panel feeds for the Operations dashboard.
 
-The router is thin on purpose: each endpoint is one provider call. The
-provider interface (`hetqml_api.ops.provider.OpsProvider`) is a Protocol
-so the v1 canned implementation can be swapped for a real probe later
-without touching the router or the wire format.
+The router stays thin: most endpoints delegate to ``OpsProvider`` or focused
+feed modules. ``GET /ops/ibm-workload`` merges persisted Settings BYOK and
+optional IBM probing via ``ibm_workload_feed``.
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from hetqml_api.deps import get_ops_provider
+from hetqml_api.deps import get_app_settings, get_ops_provider, get_settings_store, get_store
+from hetqml_api.jobs.store import JobStore
+from hetqml_api.ops.ibm_workload_feed import build_ibm_workload
+from hetqml_api.ops.jobs_feed import investigation_jobs_to_ops
 from hetqml_api.ops.provider import OpsProvider
+from hetqml_api.persistence.protocols import SettingsStore
 from hetqml_api.schemas import (
     CostSummary,
     IbmWorkload,
@@ -22,6 +25,7 @@ from hetqml_api.schemas import (
     OpsResources,
     OpsSources,
 )
+from hetqml_api.settings import Settings
 
 router = APIRouter(prefix="/ops", tags=["ops"])
 
@@ -32,8 +36,16 @@ async def get_ops_health(provider: OpsProvider = Depends(get_ops_provider)) -> O
 
 
 @router.get("/ibm-workload", response_model=IbmWorkload)
-async def get_ibm_workload(provider: OpsProvider = Depends(get_ops_provider)) -> IbmWorkload:
-    return provider.ibm_workload()
+async def get_ibm_workload(
+    provider: OpsProvider = Depends(get_ops_provider),
+    settings_store: SettingsStore = Depends(get_settings_store),
+    app_settings: Settings = Depends(get_app_settings),
+) -> IbmWorkload:
+    return await build_ibm_workload(
+        provider=provider,
+        settings_store=settings_store,
+        app_settings=app_settings,
+    )
 
 
 @router.get("/backends", response_model=OpsBackends)
@@ -42,8 +54,9 @@ async def get_backends(provider: OpsProvider = Depends(get_ops_provider)) -> Ops
 
 
 @router.get("/jobs", response_model=OpsJobs)
-async def get_ops_jobs(provider: OpsProvider = Depends(get_ops_provider)) -> OpsJobs:
-    return provider.jobs()
+async def get_ops_jobs(store: JobStore = Depends(get_store)) -> OpsJobs:
+    jobs = await store.list()
+    return investigation_jobs_to_ops(jobs)
 
 
 @router.get("/resources", response_model=OpsResources)

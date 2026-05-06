@@ -112,6 +112,23 @@ export function ParameterCombobox({
     if (cascadeLocked) setOpen(false);
   }, [cascadeLocked]);
 
+  // Guided disease list only includes names in recommendation profiles.
+  // If live catalogs diverge (renames, enrichment), guided can exclude every
+  // row while "all" still has viable choices — auto-widen so the first field
+  // never dead-ends.
+  useEffect(() => {
+    if (!(open && field === "disease" && mode === "guided")) return;
+    if (options.length === 0) return;
+    let anyGuided = false;
+    for (const opt of options) {
+      if (isOptionGuidedInCascade(field, opt.name, selection)) {
+        anyGuided = true;
+        break;
+      }
+    }
+    if (!anyGuided) setMode("all");
+  }, [open, field, mode, options, selection]);
+
   useEffect(() => {
     if (!open || cascadeLocked) return;
     const onDocMouseDown = (e: MouseEvent) => {

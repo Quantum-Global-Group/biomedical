@@ -7,6 +7,7 @@ import {
   type ApiKeysSettings,
   type AppearanceSettings,
   type IbmConnectionSettings,
+  type IbmSmokeTestResult,
   type NotificationSettings,
   type PipelineSettings,
   type PrivacySettings,
@@ -14,6 +15,7 @@ import {
   type QuantumSettings,
   type UserSettings,
   saveSettings as saveSettingsRemote,
+  smokeTestIbmConnection as smokeTestIbmConnectionRemote,
   validateIbmConnection as validateIbmConnectionRemote,
 } from "@/lib/api/client";
 import type { InitialSettings } from "@/lib/data/fetchSettingsServer";
@@ -73,6 +75,14 @@ const validateIbmConnection: (draft: UserSettings) => Promise<UserSettings> =
   IS_LITE
     ? validateIbmConnectionLite
     : (_draft: UserSettings) => validateIbmConnectionRemote();
+
+const smokeTestIbmConnection: () => Promise<IbmSmokeTestResult> = IS_LITE
+  ? async () => {
+      throw new Error(
+        "Smoke test needs the HetQML API backend (full build); static demo has no runner.",
+      );
+    }
+  : () => smokeTestIbmConnectionRemote();
 
 /* ---------- Helpers --------------------------------------------------- */
 
@@ -286,6 +296,11 @@ export function SettingsClient({ initial }: { initial: InitialSettings }) {
   const [status, setStatus] = useState<SaveStatus>({ kind: "idle" });
   const [validating, setValidating] = useState(false);
   const [validateError, setValidateError] = useState<string | null>(null);
+  const [smokeTesting, setSmokeTesting] = useState(false);
+  const [smokeError, setSmokeError] = useState<string | null>(null);
+  const [smokeResult, setSmokeResult] = useState<IbmSmokeTestResult | null>(
+    null,
+  );
   const [importError, setImportError] = useState<string | null>(null);
   const [importNotice, setImportNotice] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -368,6 +383,26 @@ export function SettingsClient({ initial }: { initial: InitialSettings }) {
       setValidateError(e instanceof Error ? e.message : String(e));
     } finally {
       setValidating(false);
+    }
+  }, [base, draft]);
+
+  const onSmokeTestIbm = useCallback(async () => {
+    if (IS_LITE) return;
+    setSmokeTesting(true);
+    setSmokeError(null);
+    setSmokeResult(null);
+    try {
+      if (!eq(base.ibmConnection, draft.ibmConnection)) {
+        const saved = await saveSettings(draft);
+        setBase(saved);
+        setDraft(saved);
+      }
+      const result = await smokeTestIbmConnection();
+      setSmokeResult(result);
+    } catch (e) {
+      setSmokeError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSmokeTesting(false);
     }
   }, [base, draft]);
 
@@ -650,6 +685,10 @@ export function SettingsClient({ initial }: { initial: InitialSettings }) {
             validating={validating}
             onValidate={onValidateIbm}
             validateError={validateError}
+            smokeTesting={smokeTesting}
+            smokeError={smokeError}
+            smokeResult={smokeResult}
+            onSmokeTest={onSmokeTestIbm}
             badgeLabel={ibmBadgeLabel}
             badgeColor={ibmBadgeColor}
           />
@@ -1515,6 +1554,10 @@ function IbmConnectionPanel({
   validating,
   onValidate,
   validateError,
+  smokeTesting,
+  smokeError,
+  smokeResult,
+  onSmokeTest,
   badgeLabel,
   badgeColor,
   lite,
@@ -1525,6 +1568,10 @@ function IbmConnectionPanel({
   validating: boolean;
   onValidate: () => void;
   validateError: string | null;
+  smokeTesting?: boolean;
+  smokeError?: string | null;
+  smokeResult?: IbmSmokeTestResult | null;
+  onSmokeTest?: () => void;
   badgeLabel: string;
   badgeColor: string;
   /** Lite layout — hide the instance-name / plan-tier rows, leaving
@@ -1609,32 +1656,69 @@ function IbmConnectionPanel({
         )}
         <div className="settings-row">
           <div className="settings-label">Connection</div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <button
-              type="button"
-              className="btn"
-              onClick={onValidate}
-              disabled={validating}
-            >
-              {validating ? "Validating…" : "⌥ Validate connection"}
-            </button>
-            <span
-              style={{
-                fontSize: 11,
-                color: validateError
-                  ? "var(--sienna)"
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+              flex: 1,
+              minWidth: 0,
+            }}
+          >
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+              <button
+                type="button"
+                className="btn"
+                onClick={onValidate}
+                disabled={validating || (smokeTesting ?? false)}
+              >
+                {validating ? "Validating…" : "⌥ Validate connection"}
+              </button>
+              {lite || !onSmokeTest ? null : (
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={onSmokeTest}
+                  disabled={validating || (smokeTesting ?? false)}
+                  title="Runs a 1-qubit sampler job on IBM (may queue on hardware)."
+                >
+                  {smokeTesting ? "Smoke test…" : "⌥ Run smoke test"}
+                </button>
+              )}
+              <span
+                style={{
+                  fontSize: 11,
+                  color: validateError
+                    ? "var(--sienna)"
+                    : value.validated
+                      ? "var(--green)"
+                      : "var(--faint)",
+                  fontFamily: "monospace",
+                }}
+              >
+                {validateError
+                  ? `— ${validateError}`
                   : value.validated
-                    ? "var(--green)"
-                    : "var(--faint)",
-                fontFamily: "monospace",
-              }}
-            >
-              {validateError
-                ? `— ${validateError}`
-                : value.validated
-                  ? `— validated · ${value.planTier ?? "no plan"}`
-                  : "— not validated"}
-            </span>
+                    ? `— validated · ${value.planTier ?? "no plan"}`
+                    : "— not validated"}
+              </span>
+            </div>
+            {lite || (!smokeError && !smokeResult) ? null : (
+              <span
+                style={{
+                  fontSize: 11,
+                  color: smokeError ? "var(--sienna)" : "var(--green)",
+                  fontFamily: "monospace",
+                  wordBreak: "break-word",
+                }}
+              >
+                {smokeError
+                  ? `smoke: ${smokeError}`
+                  : smokeResult
+                    ? `smoke: ${smokeResult.message} · ${smokeResult.outcomeSummary} · ${smokeResult.backend}${smokeResult.simulator ? " (sim)" : ""} · ${smokeResult.shots} shots · ${smokeResult.elapsedMs}ms · ${smokeResult.runtimeJobId}`
+                    : null}
+              </span>
+            )}
           </div>
         </div>
       </div>

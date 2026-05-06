@@ -14,15 +14,16 @@ Family contracts:
     `ibm_crn` are non-empty. Falls back to Aer simulator otherwise.
 
 The real-hardware path uses `qiskit_ibm_runtime.SamplerV2` to compute
-fidelity-style overlaps between every pair of input rows. To keep the
-demo tractable on hardware (where each shot of each pair has queue cost),
-we sub-sample the kernel matrix down to a small set of representative
-rows and back-fill the rest from the simulator. The boolean
-`used_real_hardware` distinguishes the two paths.
+fidelity-style overlaps between upper-triangular pairs of Gram-matrix
+rows (order O(n²) circuits for n training rows). Override row count on
+hardware only with env `HETQML_QUANTUM_HW_SAMPLES`. The boolean
+`used_real_hardware` distinguishes Aer vs IBM execution.
 """
 
 from __future__ import annotations
 
+import logging
+import os
 import time
 from dataclasses import dataclass, field
 
@@ -42,6 +43,8 @@ from sklearn.svm import SVC
 from .features import FeatureMatrix, build_features
 from hetqml_api.schemas import Selection
 
+logger = logging.getLogger(__name__)
+
 # Family-aware quantum kernel sizing. Even on the simulator, kernel cost
 # scales as O(n²) circuits, so 60 samples × 4 qubits × 256 shots is a
 # good sweet spot: <2s wall on a laptop, plausible PR-AUC.
@@ -50,6 +53,26 @@ QK_QUBITS = 4  # ZZFeatureMap qubits (== feature dim post-PCA truncation)
 QK_REPS = 2  # entanglement repetitions in the feature map
 QK_SHOTS = 256  # shots per pair on the simulator
 QK_HW_SHOTS = 1024  # shots per pair when running on real IBM hardware
+
+
+def _hw_qk_row_count() -> int:
+    """Optional cap on training rows when building the Gram matrix on hardware.
+
+    `HETQML_QUANTUM_HW_SAMPLES` (integer) clamps the quantum-kernel subset
+    size for IBM runs only — lowers circuit count (~n²/2 circuits) while
+    keeping enough rows for 5-fold stratified CV (`n >= 25`).
+
+    Omit the env var to use the normal `QK_N_SAMPLES`.
+    """
+
+    raw = os.environ.get("HETQML_QUANTUM_HW_SAMPLES", "").strip()
+    if not raw:
+        return QK_N_SAMPLES
+    try:
+        n = int(raw)
+    except ValueError:
+        return QK_N_SAMPLES
+    return max(25, min(int(n), QK_N_SAMPLES))
 
 
 @dataclass(frozen=True)
@@ -242,7 +265,11 @@ def _qk_kernel_local(X: np.ndarray) -> tuple[np.ndarray, dict]:
 
 
 def _qk_kernel_hardware(
-    X: np.ndarray, *, ibm_token: str, ibm_crn: str
+    X: np.ndarray,
+    *,
+    ibm_token: str,
+    ibm_crn: str,
+    backend_name: str = "",
 ) -> tuple[np.ndarray, dict]:
     """Compute the kernel matrix on real IBM Quantum hardware via
     qiskit-ibm-runtime. Falls back to the simulator on any error so a
@@ -262,8 +289,25 @@ def _qk_kernel_hardware(
             token=ibm_token,
             instance=ibm_crn,
         )
-        # Pick the least-busy real backend with enough qubits.
-        backend = service.least_busy(operational=True, simulator=False, min_num_qubits=QK_QUBITS)
+        resolved = (backend_name or "").strip()
+        if resolved:
+            try:
+                backend = service.backend(resolved, instance=ibm_crn)
+            except Exception as pick_exc:
+                logger.warning(
+                    "IBM backend %r not available (%s); falling back to least_busy",
+                    resolved,
+                    pick_exc,
+                )
+                backend = service.least_busy(
+                    operational=True, simulator=False, min_num_qubits=QK_QUBITS
+                )
+        else:
+            backend = service.least_busy(
+                operational=True, simulator=False, min_num_qubits=QK_QUBITS
+            )
+
+        crn_tail = ibm_crn[-24:] if len(ibm_crn) > 24 else ibm_crn
         feature_map, overlap = _build_zz_circuit()
         transpiled = transpile(overlap, backend, optimization_level=2)
 
@@ -283,8 +327,23 @@ def _qk_kernel_hardware(
                 index_map.append((i, j))
 
         sampler = SamplerV2(mode=backend)
-        job = sampler.run(circuits, shots=QK_HW_SHOTS)
-        results = job.result()
+        hw_job = sampler.run(circuits, shots=QK_HW_SHOTS)
+        results = hw_job.result()
+        runtime_job_id = ""
+        try:
+            runtime_job_id = str(hw_job.job_id())
+        except Exception:
+            pass
+
+        logger.info(
+            "IBM Quantum kernel: channel=ibm_quantum_platform backend=%s "
+            "circuits=%d shots=%s crn_tail=%s runtime_job_id=%s",
+            getattr(backend, "name", "?"),
+            len(circuits),
+            QK_HW_SHOTS,
+            crn_tail,
+            runtime_job_id or "?",
+        )
 
         K = np.zeros((n, n), dtype=np.float64)
         zero_key = "0" * QK_QUBITS
@@ -301,6 +360,8 @@ def _qk_kernel_hardware(
             "depth": int(transpiled.depth()),
             "fidelity": 0.985,  # placeholder — real value from backend props
             "used_real_hardware": True,
+            "runtime_job_id": runtime_job_id,
+            "ibm_crn_suffix": crn_tail,
         }
         return K, meta
     except Exception as exc:
@@ -312,16 +373,29 @@ def _qk_kernel_hardware(
 
 
 def _run_qk_family(
-    family: str, selection: Selection, *, ibm_token: str, ibm_crn: str
+    family: str,
+    selection: Selection,
+    *,
+    ibm_token: str,
+    ibm_crn: str,
+    ibm_backend: str = "",
 ) -> AlgoResult:
     """Shared body for the hybrid + quantum families. Difference is
     purely whether we use the local Aer simulator or IBM hardware to
     compute the kernel matrix."""
     t0 = time.perf_counter()
-    fm = build_features(selection, n_samples=QK_N_SAMPLES)
+    n_rows = QK_N_SAMPLES
+    if family == "quantum" and ibm_token.strip() and ibm_crn.strip():
+        n_rows = _hw_qk_row_count()
+    fm = build_features(selection, n_samples=n_rows)
 
     if family == "quantum" and ibm_token and ibm_crn:
-        K, meta = _qk_kernel_hardware(fm.X, ibm_token=ibm_token, ibm_crn=ibm_crn)
+        K, meta = _qk_kernel_hardware(
+            fm.X,
+            ibm_token=ibm_token,
+            ibm_crn=ibm_crn,
+            backend_name=ibm_backend,
+        )
     else:
         K, meta = _qk_kernel_local(fm.X)
 
@@ -344,6 +418,11 @@ def _run_qk_family(
         f"{QK_QUBITS} qubits · {meta['shots']} shots/pair",
         f"ZZFeatureMap reps={QK_REPS} · kernel SVC · 5-fold stratified CV",
     ]
+    if meta.get("runtime_job_id"):
+        notes.append(
+            "IBM Runtime job id (Workloads UI): "
+            + str(meta["runtime_job_id"])
+        )
     if "fallback_reason" in meta:
         notes.append(meta["fallback_reason"])
 
@@ -373,8 +452,20 @@ def run_hybrid(selection: Selection) -> AlgoResult:
     return _run_qk_family("hybrid", selection, ibm_token="", ibm_crn="")
 
 
-def run_quantum(selection: Selection, *, ibm_token: str, ibm_crn: str) -> AlgoResult:
-    return _run_qk_family("quantum", selection, ibm_token=ibm_token, ibm_crn=ibm_crn)
+def run_quantum(
+    selection: Selection,
+    *,
+    ibm_token: str,
+    ibm_crn: str,
+    ibm_backend: str = "",
+) -> AlgoResult:
+    return _run_qk_family(
+        "quantum",
+        selection,
+        ibm_token=ibm_token,
+        ibm_crn=ibm_crn,
+        ibm_backend=ibm_backend,
+    )
 
 
 # --- Dispatcher ----------------------------------------------------------
@@ -386,6 +477,7 @@ def run_algorithm(
     *,
     ibm_token: str = "",
     ibm_crn: str = "",
+    ibm_backend: str = "",
 ) -> AlgoResult:
     """Top-level entrypoint. The runner calls this with the family from
     `job.run_path.family` and the credentials it pulled from the settings
@@ -395,5 +487,10 @@ def run_algorithm(
     if family == "hybrid":
         return run_hybrid(selection)
     if family == "quantum":
-        return run_quantum(selection, ibm_token=ibm_token, ibm_crn=ibm_crn)
+        return run_quantum(
+            selection,
+            ibm_token=ibm_token,
+            ibm_crn=ibm_crn,
+            ibm_backend=ibm_backend,
+        )
     raise ValueError(f"Unknown family: {family!r}")
