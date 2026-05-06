@@ -12,7 +12,22 @@ license: mit
 
 Docker Space serving the static export of the [hetqml-web](https://github.com/Quantum-Global-Group/biomedical) Next.js **lite** dashboard (`BUILD_TARGET=lite`, `NEXT_PUBLIC_LITE_MODE=true`). The container listens on **port 7860** (FastAPI + Uvicorn + static files).
 
-This Space surfaces the **research-narrative shell**: Initialize → Experiment → Validate, with mock data so visitors can click through the workflow end-to-end. The full version (live FastAPI, IBM Quantum BYOK, decision audit log, Visualize 3D panels) uses the project’s Fly.io deployment.
+**Default HF export (`pnpm export:hf`) talks to Fly:** Settings → PUT/ibm-validate/smoke and Operations poll **`https://hetqml-api.fly.dev`** (`NEXT_PUBLIC_LITE_REMOTE_API=true` baked into the bundle). Initialization / Experiment / Validate still mock catalog narratives where the full app isn’t wired in lite.
+
+---
+
+## Offline demo build (fixtures only — no Fly)
+
+Use when you intentionally want **browser-only IBM + Operations fixtures** (`localStorage`, DEMO badges, no Refresh):
+
+```bash
+cd hetqml-fullstack/apps/web
+pnpm export:hf:demo
+```
+
+Then copy `hf_space/static/` into the Docker image as usual.
+
+---
 
 ## Two render modes (sidebar toggle)
 
@@ -21,39 +36,40 @@ This Space surfaces the **research-narrative shell**: Initialize → Experiment 
 | **Demo** (default) | Inaxaplin → Hypertension-attributed ESKD walkthrough; mock leaderboard topped by "Quantum Kernel + Metapath" PR-AUC 0.827 |
 | **Headline** | Hetionet CtD methodology study — the preregistered five-row panel (Stacking ensemble (Pauli) PR-AUC 0.7987 → QSVC 0.7216) with H1/H1b/H2/H3 decision-rule status and § citations on every Trust Scorecard axis |
 
-## What’s locked out vs the full version (static demo export)
+---
 
-- **`pnpm export:hf` default** keeps **Settings** on `localStorage`, **Operations** on fixtures, and omits live IBM validate/smoke (no API).
-- **Linked backend** builds (see below) match Fly for validate, smoke, and `/ops/*`.
+## Locked out vs Hetionet Full (lite remains lite)
 
-- **Validate** reviewer-decision panel and Skeptic-Notes editor are display-only (no backend to persist Keep/Review/Reject).
-- **Visualize** is a placeholder — the 3D molecule / KG / UMAP / quantum kernel circuit panels are migration-in-progress for both the full and lite versions.
+- **Validate** reviewer-decision panel + Skeptic-Notes editor remain **display-only** (nothing persists for decisions).
+- **Visualize** is still a lite placeholder — no heavy 3D / circuit panels in this export.
 
-## Linked backend (HetQML API from the Space)
+IBM validate, smoke test, Operations feeds, and **Refresh feeds** mirror Full **once** `export:hf` + deployed API CORS below are aligned.
 
-Build the static export with **`NEXT_PUBLIC_LITE_REMOTE_API=true`** and **`NEXT_PUBLIC_API_URL`** pointing at your public `hetqml-api` URL (e.g. `https://hetqml-api.fly.dev`):
+---
 
-```bash
-cd hetqml-fullstack/apps/web
-pnpm export:hf:linked
-# or manually:
-# BUILD_TARGET=lite NEXT_PUBLIC_LITE_REMOTE_API=true NEXT_PUBLIC_API_URL=https://hetqml-api.fly.dev next build
-# then copy `out/` → hf_space/static/
-```
+## Build and publish
 
-Then Operations **polls `/ops/*`**, **Refresh feeds** works, and Settings uses **PUT `/settings`**, **`POST /settings/ibm/validate`**, **`POST /settings/ibm/smoke-test`** like Hetionet Full (shared server SQLite + IBM — treat as **non-isolated** vs the static demo).
+From the **biomedical** repo (branch `roc/preregistration-tighten` or your release):
 
-The Fly API allows browser origins matching **`*.hf.space`** and **`https://huggingface.co`** via `allow_origin_regex`; add your Space URL to **`ALLOWED_ORIGINS`** as well if needed.
-
-From the **biomedical** repo root (after checkout of `roc/preregistration-tighten` or your release branch):
+### Default (**linked Fly API** — prod Space)
 
 ```bash
 pnpm --filter hetqml-web export:hf
 ```
 
-This runs `next build` with lite flags and copies `apps/web/out/` → `apps/web/hf_space/static/`.
+This runs lite `next build` with **`NEXT_PUBLIC_LITE_REMOTE_API=true`** + **`NEXT_PUBLIC_API_URL=https://hetqml-api.fly.dev`**, copies `apps/web/out/` → `apps/web/hf_space/static/`.
 
-Then push the **contents** of `hetqml-fullstack/apps/web/hf_space/` to the Space repo (or build locally with `docker build` from that directory after `export:hf`).
+Override the API URL for a fork:
+
+```bash
+cd hetqml-fullstack/apps/web
+BUILD_TARGET=lite NEXT_PUBLIC_LITE_REMOTE_API=true NEXT_PUBLIC_API_URL=https://your-api.example next build \
+  && rm -rf hf_space/static && mkdir -p hf_space/static && cp -r out/. hf_space/static/
+```
+
+Deploy the **HetQML API** on Fly **with updated CORS** (see `apps/api`): browser origins **`*.hf.space`** and **`https://huggingface.co`** are allowed via `allow_origin_regex`. Add **`ALLOWED_ORIGINS`** entries if your Space uses a different host.
+
+Push **`hetqml-fullstack/apps/web/hf_space/`** (with generated `static/`) to your Space repo, then Docker build:
 
 ```bash
 cd hetqml-fullstack/apps/web/hf_space
@@ -61,9 +77,13 @@ docker build -t hetionet-lite .
 docker run --rm -p 7860:7860 hetionet-lite
 ```
 
-`static/` is required for the image build; it is intentionally **gitignored** in the monorepo and produced only by `export:hf`.
+`static/` is **gitignored** in-repo and produced only by `export:hf` / `export:hf:demo`.
 
-### Hugging Face Git remote
+Alias: **`pnpm export:hf:linked`** is identical to **`export:hf`**.
+
+---
+
+## Hugging Face Git remote
 
 ```bash
 git clone https://huggingface.co/spaces/quantumGlobalGroup/Hetionet-Lite
@@ -71,6 +91,8 @@ git clone https://huggingface.co/spaces/quantumGlobalGroup/Hetionet-Lite
 ```
 
 Or use the Hub CLI: `uv tool install hf` then `hf download quantumGlobalGroup/Hetionet-Lite --repo-type=space` for an initial sync.
+
+---
 
 ## Source
 
