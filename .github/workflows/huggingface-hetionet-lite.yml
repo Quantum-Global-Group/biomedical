@@ -11,6 +11,8 @@ on:
   push:
     branches:
       - main
+      # Remove after this branch merges; keeps Space in sync until then.
+      - roc/preregistration-tighten
     paths:
       - "hetqml-fullstack/apps/web/**"
       - "scripts/sync_hf_space_lite.py"
