@@ -267,9 +267,15 @@ export interface Job {
   error: string | null;
 }
 
+function stripTrailingSlashes(url: string): string {
+  return url.replace(/\/+$/, "");
+}
+
 function apiBase(): string {
   if (typeof window === "undefined") {
-    return process.env.API_INTERNAL_URL ?? "http://localhost:8000";
+    return stripTrailingSlashes(
+      process.env.API_INTERNAL_URL ?? "http://localhost:8000",
+    );
   }
   const lite =
     process.env.NEXT_PUBLIC_LITE_MODE === "true" ||
@@ -284,7 +290,9 @@ function apiBase(): string {
   ) {
     return "/__hetqml_api";
   }
-  return process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+  return stripTrailingSlashes(
+    process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000",
+  );
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {

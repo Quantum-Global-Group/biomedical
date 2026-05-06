@@ -92,6 +92,24 @@ git clone https://huggingface.co/spaces/quantumGlobalGroup/Hetionet-Lite
 
 Or use the Hub CLI: `uv tool install hf` then `hf download quantumGlobalGroup/Hetionet-Lite --repo-type=space` for an initial sync.
 
+### GitHub Actions (recommended)
+
+`static/` is **not** tracked on GitHub, so clones never contain the exported bundle. Either run `export:hf` manually before copying into the Space repo, or use CI:
+
+1. Repository **secret** **`HF_TOKEN`**: Hugging Face token with write access to the Space (`Settings → Secrets and variables → Actions`).
+2. Optional **variable** **`HF_SPACE_REPO_ID`**: default `quantumGlobalGroup/Hetionet-Lite`.
+
+Workflow **`.github/workflows/huggingface-hetionet-lite.yml`** at the biomedical repo root runs **`pnpm --filter hetqml-web export:hf`** then `scripts/sync_hf_space_lite.py` (same as running it locally).
+
+**Triggers:** `workflow_dispatch`, or push to **`main`** when `hetqml-fullstack/apps/web/**` changes.
+
+Locally after export:
+
+```bash
+export HF_TOKEN=hf_***
+python3 scripts/sync_hf_space_lite.py
+```
+
 ---
 
 ## Source
