@@ -18,6 +18,22 @@ export function isLiteMode(): boolean {
   return process.env.NEXT_PUBLIC_LITE_MODE === "true";
 }
 
+/** Lite export built with HF ↔ Fly linkage: hits `NEXT_PUBLIC_API_URL` like full. */
+export function useRemoteApiInLite(): boolean {
+  return process.env.NEXT_PUBLIC_LITE_REMOTE_API === "true";
+}
+
+/** Static demo lite (fixtures + localStorage) — opposite of linked backend. */
+export function isLiteStaticDemo(): boolean {
+  return isLiteMode() && !useRemoteApiInLite();
+}
+
+export const LITE_BACKEND_LINKED_BODY =
+  "This build is linked to the HetQML API (`NEXT_PUBLIC_API_URL`). Operations polls " +
+  "live feeds; Settings saves to the server SQLite store and IBM validate / smoke test " +
+  "call FastAPI — same as Hetionet Full. Ensure CORS allows this origin and avoid " +
+  "production secrets unless you intend to.";
+
 /** Used inside lite-mode UI — short string for sidebars / pills. */
 export const LITE_BADGE_LABEL = "Demo · HF Space";
 

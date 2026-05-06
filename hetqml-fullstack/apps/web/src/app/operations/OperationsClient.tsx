@@ -2,7 +2,13 @@
 
 import Link from "next/link";
 import { useOps } from "@/lib/operations/useOps";
-import { isLiteMode, LITE_BANNER_BODY } from "@/lib/liteMode";
+import {
+  isLiteMode,
+  isLiteStaticDemo,
+  useRemoteApiInLite,
+  LITE_BACKEND_LINKED_BODY,
+  LITE_BANNER_BODY,
+} from "@/lib/liteMode";
 import { AlertsIncidentsPanel } from "@/components/operations/AlertsIncidentsPanel";
 import { CostBudgetPanel } from "@/components/operations/CostBudgetPanel";
 import { DataSourcesPanel } from "@/components/operations/DataSourcesPanel";
@@ -16,6 +22,8 @@ import { StatusPill } from "@/components/operations/StatusPill";
 import { SystemHealthGrid } from "@/components/operations/SystemHealthGrid";
 
 const IS_LITE = isLiteMode();
+/** Full Ops UI: Fly/standalone builds, or lite static export compiled with linked API. */
+const OPS_FULL_UI = !IS_LITE || useRemoteApiInLite();
 
 /** Operations page client.
  *
@@ -24,9 +32,9 @@ const IS_LITE = isLiteMode();
  *     IbmWorkload, QuantumBackends, ResourceUtilization, JobQueue,
  *     JobHistory, CostBudget, DataSources, AlertsIncidents — driven
  *     by `useOps()` polling /ops/* every 5s with seed fallback.
- *   - Lite (HF Space, static export): same top three blocks as full
- *     (metrics, IBM workload, job queue) with demo fixtures and badges;
- *     no live refresh. Deeper panels are omitted to keep the demo focused.
+ *   - Lite static demo: top three panels + fixtures (`isLiteStaticDemo()`).
+ *   - Lite linked API (`NEXT_PUBLIC_LITE_REMOTE_API`): same panels + polling +
+ *     refresh + deep stack as Hetionet Full.
  */
 export function OperationsClient() {
   const ops = useOps();
@@ -40,14 +48,14 @@ export function OperationsClient() {
         <div>
           <div className="step">SYSTEM · OPERATIONS</div>
           <h1 className="h1">
-            {IS_LITE
-              ? "Quantum workload and active job queue"
-              : "Platform health, run history, and resource posture"}
+            {OPS_FULL_UI
+              ? "Platform health, run history, and resource posture"
+              : "Quantum workload and active job queue"}
           </h1>
           <p className="lede">
-            {IS_LITE
-              ? "Same three blocks as Hetionet Full—top metrics, IBM Quantum workload, active job queue—with illustrative fixtures while this static build runs without FastAPI."
-              : "Operations is the systems-side view: are the quantum backends healthy, are upstream data sources fresh, what jobs are running, what's been spent. The Initialize → Visualize pipeline trusts that everything here is green."}
+            {OPS_FULL_UI
+              ? "Operations is the systems-side view: are the quantum backends healthy, are upstream data sources fresh, what jobs are running, what's been spent. The Initialize → Visualize pipeline trusts that everything here is green."
+              : "Same three blocks as Hetionet Full — metrics, IBM workload, job queue — with illustrative fixtures (no backend in this demo build)."}
           </p>
         </div>
         <div
@@ -58,7 +66,7 @@ export function OperationsClient() {
             gap: 10,
           }}
         >
-          {!IS_LITE ? (
+          {OPS_FULL_UI ? (
             <button
               type="button"
               className="btn"
@@ -80,20 +88,20 @@ export function OperationsClient() {
           className="panel"
           style={{
             marginTop: 14,
-            borderColor: "var(--gold)",
+            borderColor: isLiteStaticDemo() ? "var(--gold)" : "var(--teal)",
             padding: "12px 16px",
           }}
           role="note"
         >
           <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: "var(--muted)" }}>
-            {LITE_BANNER_BODY}
+            {isLiteStaticDemo() ? LITE_BANNER_BODY : LITE_BACKEND_LINKED_BODY}
           </p>
         </div>
       ) : null}
       <IbmWorkloadPanel ibm={ops.ibm} />
       <JobQueuePanel jobs={ops.jobs} />
 
-      {IS_LITE ? null : (
+      {!OPS_FULL_UI ? null : (
         <>
           <SystemHealthGrid health={ops.health} />
 
@@ -113,13 +121,13 @@ export function OperationsClient() {
         </>
       )}
 
-      {IS_LITE ? null : ops.error && someSeed ? (
+      {!OPS_FULL_UI ? null : ops.error && someSeed ? (
         <div className="skeptic-warning" style={{ marginTop: 14 }}>
           API offline — showing fallback seed data. ({ops.error})
         </div>
       ) : null}
 
-      {IS_LITE ? null : (
+      {!OPS_FULL_UI ? null : (
         <div className="how-to">
           <div className="how-to-h">⊙ HOW TO READ THIS PAGE</div>
           <div className="how-to-title">

@@ -43,12 +43,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="hetqml-api", version="0.1.0", lifespan=lifespan)
 
+    # Hugging Face Spaces: pages are served from *.hf.space; allow_origin_regex must
+    # match the browser Origin header. Add explicit origins via ALLOWED_ORIGINS too.
+    _local_origin_re = r"^https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$"
+    _hf_space_re = (
+        r"^https://[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.hf\.space$"
+    )
+    _hf_hub_re = r"^https://huggingface\.co$"
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cfg.cors_origins,
         # Any port on localhost / 127.0.0.1 (e.g. Next on 3000, Cursor 52xxx).
         # Include IPv6 loopback — some dev setups open Next at http://[::1]:3000.
-        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$",
+        allow_origin_regex=rf"{_local_origin_re}|{_hf_space_re}|{_hf_hub_re}",
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["*"],

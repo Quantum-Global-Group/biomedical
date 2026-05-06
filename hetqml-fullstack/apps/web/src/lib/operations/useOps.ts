@@ -31,11 +31,10 @@ import {
   SEED_RESOURCES,
   SEED_SOURCES,
 } from "./seed";
-import { isLiteMode } from "@/lib/liteMode";
+import { isLiteStaticDemo } from "@/lib/liteMode";
 
 const POLL_INTERVAL_MS = 5_000;
-// Build-time-folded so the lite branch DCEs the polling effect entirely.
-const IS_LITE = isLiteMode();
+const OPS_STATIC_LITE = isLiteStaticDemo();
 
 type OpsSource = "seed" | "live";
 
@@ -65,7 +64,7 @@ export interface OpsState {
   lastUpdated: Date | null;
   /** True during a manual or tab-visibility-triggered bulk refetch (full build only). */
   refreshing: boolean;
-  /** Re-fetch all `/ops/*` feeds now (queues, ETAs, health, etc.). No-op in lite mode. */
+  /** Re-fetch all `/ops/*` feeds now (queues, ETAs, health, etc.). No-op in static demo lite. */
   refresh: () => Promise<void>;
 }
 
@@ -79,10 +78,10 @@ export interface OpsState {
  */
 export function useOps(intervalMs: number = POLL_INTERVAL_MS): OpsState {
   const [health, setHealth] = useState<OpsHealthResponse>(
-    IS_LITE ? SEED_HEALTH_LITE : SEED_HEALTH,
+    OPS_STATIC_LITE ? SEED_HEALTH_LITE : SEED_HEALTH,
   );
   const [ibm, setIbm] = useState<IbmWorkloadResponse>(
-    IS_LITE ? SEED_IBM_LITE : SEED_IBM,
+    OPS_STATIC_LITE ? SEED_IBM_LITE : SEED_IBM,
   );
   const [backends, setBackends] = useState<OpsBackendsResponse>(SEED_BACKENDS);
   const [jobs, setJobs] = useState<OpsJobsResponse>(SEED_JOBS);
@@ -110,7 +109,7 @@ export function useOps(intervalMs: number = POLL_INTERVAL_MS): OpsState {
   const tickRef = useRef<(() => Promise<void>) | null>(null);
 
   const refresh = useCallback(async () => {
-    if (IS_LITE) return;
+    if (OPS_STATIC_LITE) return;
     const fn = tickRef.current;
     if (!fn) return;
     setRefreshing(true);
@@ -126,13 +125,13 @@ export function useOps(intervalMs: number = POLL_INTERVAL_MS): OpsState {
   // `source` flags stay "seed" so the panel footers read "demo data"
   // and the page banner can branch on isLiteMode().
   useEffect(() => {
-    if (!IS_LITE) return;
+    if (!OPS_STATIC_LITE) return;
     setLoaded(true);
     setLastUpdated(new Date());
   }, []);
 
   useEffect(() => {
-    if (IS_LITE) return;
+    if (OPS_STATIC_LITE) return;
     cancelled.current = false;
 
     const tick = async () => {

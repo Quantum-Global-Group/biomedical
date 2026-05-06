@@ -14,6 +14,7 @@ import {
   type ProfileSettings,
   type QuantumSettings,
   type UserSettings,
+  fetchSettings,
   saveSettings as saveSettingsRemote,
   smokeTestIbmConnection as smokeTestIbmConnectionRemote,
   validateIbmConnection as validateIbmConnectionRemote,
@@ -21,9 +22,10 @@ import {
 import type { InitialSettings } from "@/lib/data/fetchSettingsServer";
 import { DEFAULT_SETTINGS } from "@/lib/settings/defaults";
 import { citationLine, versionLabel } from "@/lib/branding";
-import { isLiteMode } from "@/lib/liteMode";
+import { isLiteMode, useRemoteApiInLite } from "@/lib/liteMode";
 
 const IS_LITE = isLiteMode();
+const LITE_REMOTE_API = IS_LITE && useRemoteApiInLite();
 const LITE_LOCALSTORAGE_KEY = "hetqml.liteSettings";
 
 /** localStorage-backed save used by the lite (HF Space) build. The
@@ -63,26 +65,28 @@ async function validateIbmConnectionLite(
   return saveSettingsLite(updated);
 }
 
-const saveSettings: (draft: UserSettings) => Promise<UserSettings> = IS_LITE
-  ? saveSettingsLite
-  : saveSettingsRemote;
+/** When lite + no remote API only: localStorage + fake IBM validate. */
+
+const saveSettings: (draft: UserSettings) => Promise<UserSettings> =
+  IS_LITE && !LITE_REMOTE_API ? saveSettingsLite : saveSettingsRemote;
 
 // The remote validateIbmConnection takes no arguments — the FastAPI route
 // reads the persisted draft from the database. Wrap it to share the
 // `(draft) => Promise<UserSettings>` signature with the lite shim so call
 // sites don't need to know which build target they are in.
 const validateIbmConnection: (draft: UserSettings) => Promise<UserSettings> =
-  IS_LITE
+  IS_LITE && !LITE_REMOTE_API
     ? validateIbmConnectionLite
     : (_draft: UserSettings) => validateIbmConnectionRemote();
 
-const smokeTestIbmConnection: () => Promise<IbmSmokeTestResult> = IS_LITE
-  ? async () => {
-      throw new Error(
-        "Smoke test needs the HetQML API backend (full build); static demo has no runner.",
-      );
-    }
-  : () => smokeTestIbmConnectionRemote();
+const smokeTestIbmConnectionImpl: () => Promise<IbmSmokeTestResult> =
+  IS_LITE && !LITE_REMOTE_API
+    ? async () => {
+        throw new Error(
+          "Enable NEXT_PUBLIC_LITE_REMOTE_API and NEXT_PUBLIC_API_URL for smoke test.",
+        );
+      }
+    : () => smokeTestIbmConnectionRemote();
 
 /* ---------- Helpers --------------------------------------------------- */
 
@@ -309,7 +313,7 @@ export function SettingsClient({ initial }: { initial: InitialSettings }) {
   // the user's edits. Runs once after mount; if the stored payload is
   // invalid we silently keep the schema-default `initial` instead.
   useEffect(() => {
-    if (!IS_LITE || typeof window === "undefined") return;
+    if (!IS_LITE || LITE_REMOTE_API || typeof window === "undefined") return;
     try {
       const raw = window.localStorage.getItem(LITE_LOCALSTORAGE_KEY);
       if (!raw) return;
@@ -319,6 +323,28 @@ export function SettingsClient({ initial }: { initial: InitialSettings }) {
     } catch {
       /* malformed payload — stick with defaults */
     }
+  }, []);
+
+  useEffect(() => {
+    if (!LITE_REMOTE_API || typeof window === "undefined") return;
+    let cancel = false;
+    void fetchSettings()
+      .then((settings) => {
+        if (cancel) return;
+        setBase(settings);
+        setDraft(settings);
+        setStatus({ kind: "idle" });
+      })
+      .catch((e) => {
+        if (cancel) return;
+        setStatus({
+          kind: "error",
+          message: `Settings API: ${e instanceof Error ? e.message : String(e)}`,
+        });
+      });
+    return () => {
+      cancel = true;
+    };
   }, []);
 
   const dirty = useMemo(() => !eq(base, draft), [base, draft]);
@@ -387,7 +413,7 @@ export function SettingsClient({ initial }: { initial: InitialSettings }) {
   }, [base, draft]);
 
   const onSmokeTestIbm = useCallback(async () => {
-    if (IS_LITE) return;
+    if (IS_LITE && !LITE_REMOTE_API) return;
     setSmokeTesting(true);
     setSmokeError(null);
     setSmokeResult(null);
@@ -397,7 +423,7 @@ export function SettingsClient({ initial }: { initial: InitialSettings }) {
         setBase(saved);
         setDraft(saved);
       }
-      const result = await smokeTestIbmConnection();
+      const result = await smokeTestIbmConnectionImpl();
       setSmokeResult(result);
     } catch (e) {
       setSmokeError(e instanceof Error ? e.message : String(e));
@@ -636,9 +662,13 @@ export function SettingsClient({ initial }: { initial: InitialSettings }) {
             validating={validating}
             onValidate={onValidateIbm}
             validateError={validateError}
+            smokeTesting={LITE_REMOTE_API ? smokeTesting : undefined}
+            smokeError={LITE_REMOTE_API ? smokeError : undefined}
+            smokeResult={LITE_REMOTE_API ? smokeResult : undefined}
+            onSmokeTest={LITE_REMOTE_API ? onSmokeTestIbm : undefined}
             badgeLabel={ibmBadgeLabel}
             badgeColor={ibmBadgeColor}
-            lite
+            lite={!LITE_REMOTE_API}
           />
         </>
       ) : (

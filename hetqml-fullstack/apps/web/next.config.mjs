@@ -5,10 +5,10 @@
 //   default  -> output: "standalone", Node.js runtime (Fly.io / Docker)
 //   BUILD_TARGET=lite  -> output: "export", static-only (Hugging Face Space)
 //
-// The lite target also exposes `NEXT_PUBLIC_LITE_MODE=true` to the client
-// so components can render demo-banner UI and lock out routes that depend
-// on a live FastAPI (Operations + Settings call ops/decisions/notes
-// endpoints; the static build can't reach a backend).
+// The lite target exposes `NEXT_PUBLIC_LITE_MODE=true` for demo-banner UI.
+// Optional `NEXT_PUBLIC_LITE_REMOTE_API=true` (+ `NEXT_PUBLIC_API_URL`)
+// wires Settings (PUT/validate/smoke) and Operations polling to Fly or any
+// public hetqml-api origin (requires CORS — see hf_space/README).
 //
 // Trigger:
 //   pnpm --filter hetqml-web build         # standalone (default)
@@ -69,6 +69,8 @@ const nextConfig = {
   // means full mode.
   env: {
     NEXT_PUBLIC_LITE_MODE: isLite ? "true" : "false",
+    NEXT_PUBLIC_LITE_REMOTE_API:
+      process.env.NEXT_PUBLIC_LITE_REMOTE_API === "true" ? "true" : "false",
   },
 };
 

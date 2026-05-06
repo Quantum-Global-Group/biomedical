@@ -4,21 +4,23 @@
  * carry the expected wording (the LiteUnavailablePanel / sidebar badge
  * read these directly).
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { isLiteMode, LITE_BADGE_LABEL, LITE_BANNER_BODY } from "./liteMode";
+import {
+  isLiteMode,
+  LITE_BADGE_LABEL,
+  LITE_BANNER_BODY,
+} from "./liteMode";
 
-const ORIG = process.env.NEXT_PUBLIC_LITE_MODE;
+const ORIG_LITE = process.env.NEXT_PUBLIC_LITE_MODE;
+const ORIG_REMOTE = process.env.NEXT_PUBLIC_LITE_REMOTE_API;
 
 afterEach(() => {
-  process.env.NEXT_PUBLIC_LITE_MODE = ORIG;
+  process.env.NEXT_PUBLIC_LITE_MODE = ORIG_LITE;
+  process.env.NEXT_PUBLIC_LITE_REMOTE_API = ORIG_REMOTE;
 });
 
 describe("isLiteMode", () => {
-  beforeEach(() => {
-    vi.resetModules();
-  });
-
   it("returns true only for the literal string 'true'", () => {
     process.env.NEXT_PUBLIC_LITE_MODE = "true";
     expect(isLiteMode()).toBe(true);
@@ -39,6 +41,37 @@ describe("isLiteMode", () => {
     expect(isLiteMode()).toBe(false);
     process.env.NEXT_PUBLIC_LITE_MODE = "yes";
     expect(isLiteMode()).toBe(false);
+  });
+});
+
+describe("useRemoteApiInLite", () => {
+  it("returns true only for NEXT_PUBLIC_LITE_REMOTE_API literal true", async () => {
+    vi.resetModules();
+    process.env.NEXT_PUBLIC_LITE_REMOTE_API = "true";
+    const m = await import("./liteMode");
+    expect(m.useRemoteApiInLite()).toBe(true);
+    process.env.NEXT_PUBLIC_LITE_REMOTE_API = "1";
+    vi.resetModules();
+    const m2 = await import("./liteMode");
+    expect(m2.useRemoteApiInLite()).toBe(false);
+  });
+});
+
+describe("isLiteStaticDemo", () => {
+  it("true when lite and remote flag absent/false", async () => {
+    vi.resetModules();
+    process.env.NEXT_PUBLIC_LITE_MODE = "true";
+    delete process.env.NEXT_PUBLIC_LITE_REMOTE_API;
+    const m = await import("./liteMode");
+    expect(m.isLiteStaticDemo()).toBe(true);
+  });
+
+  it("false when lite and remote api enabled", async () => {
+    vi.resetModules();
+    process.env.NEXT_PUBLIC_LITE_MODE = "true";
+    process.env.NEXT_PUBLIC_LITE_REMOTE_API = "true";
+    const m = await import("./liteMode");
+    expect(m.isLiteStaticDemo()).toBe(false);
   });
 });
 

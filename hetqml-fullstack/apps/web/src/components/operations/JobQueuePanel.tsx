@@ -1,7 +1,7 @@
 "use client";
 
 import type { OpsJobsResponse } from "@/lib/api/client";
-import { isLiteMode } from "@/lib/liteMode";
+import { isLiteStaticDemo } from "@/lib/liteMode";
 import { formatEta } from "@/lib/operations/format";
 
 interface Props {
@@ -27,7 +27,7 @@ export function JobQueuePanel({ jobs }: Props) {
           <div className="eyebrow">TOOL · ACTIVE JOB QUEUE</div>
           <div className="panel-title">What&apos;s running now</div>
         </div>
-        <span className="badge">{isLiteMode() ? "Demo" : "Live"}</span>
+        <span className="badge">{isLiteStaticDemo() ? "Demo" : "Live"}</span>
       </div>
       <p className="panel-purpose">
         Pending and in-progress jobs across the cluster. Each row links to its

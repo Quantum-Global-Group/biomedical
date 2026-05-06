@@ -21,13 +21,29 @@ This Space surfaces the **research-narrative shell**: Initialize → Experiment 
 | **Demo** (default) | Inaxaplin → Hypertension-attributed ESKD walkthrough; mock leaderboard topped by "Quantum Kernel + Metapath" PR-AUC 0.827 |
 | **Headline** | Hetionet CtD methodology study — the preregistered five-row panel (Stacking ensemble (Pauli) PR-AUC 0.7987 → QSVC 0.7216) with H1/H1b/H2/H3 decision-rule status and § citations on every Trust Scorecard axis |
 
-## What’s locked out vs the full version
+## What’s locked out vs the full version (static demo export)
 
-- **Settings → IBM smoke test / live validation** calls FastAPI endpoints that are omitted in static export (`Validate connection` saves locally only; IBM panels on Operations remain fixtures).
+- **`pnpm export:hf` default** keeps **Settings** on `localStorage`, **Operations** on fixtures, and omits live IBM validate/smoke (no API).
+- **Linked backend** builds (see below) match Fly for validate, smoke, and `/ops/*`.
+
 - **Validate** reviewer-decision panel and Skeptic-Notes editor are display-only (no backend to persist Keep/Review/Reject).
 - **Visualize** is a placeholder — the 3D molecule / KG / UMAP / quantum kernel circuit panels are migration-in-progress for both the full and lite versions.
 
-## Build and publish
+## Linked backend (HetQML API from the Space)
+
+Build the static export with **`NEXT_PUBLIC_LITE_REMOTE_API=true`** and **`NEXT_PUBLIC_API_URL`** pointing at your public `hetqml-api` URL (e.g. `https://hetqml-api.fly.dev`):
+
+```bash
+cd hetqml-fullstack/apps/web
+pnpm export:hf:linked
+# or manually:
+# BUILD_TARGET=lite NEXT_PUBLIC_LITE_REMOTE_API=true NEXT_PUBLIC_API_URL=https://hetqml-api.fly.dev next build
+# then copy `out/` → hf_space/static/
+```
+
+Then Operations **polls `/ops/*`**, **Refresh feeds** works, and Settings uses **PUT `/settings`**, **`POST /settings/ibm/validate`**, **`POST /settings/ibm/smoke-test`** like Hetionet Full (shared server SQLite + IBM — treat as **non-isolated** vs the static demo).
+
+The Fly API allows browser origins matching **`*.hf.space`** and **`https://huggingface.co`** via `allow_origin_regex`; add your Space URL to **`ALLOWED_ORIGINS`** as well if needed.
 
 From the **biomedical** repo root (after checkout of `roc/preregistration-tighten` or your release branch):
 

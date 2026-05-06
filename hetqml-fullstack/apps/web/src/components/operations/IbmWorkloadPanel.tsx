@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { IbmWorkloadResponse } from "@/lib/api/client";
-import { isLiteMode } from "@/lib/liteMode";
+import { isLiteStaticDemo } from "@/lib/liteMode";
 import { formatDuration, formatPct, formatUsd } from "@/lib/operations/format";
 
 interface Props {
@@ -18,7 +18,7 @@ interface Props {
  *    last 5 jobs
  */
 export function IbmWorkloadPanel({ ibm }: Props) {
-  const lite = isLiteMode();
+  const lite = isLiteStaticDemo();
   const badge = lite
     ? "Demo"
     : ibm.configured
