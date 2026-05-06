@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useOps } from "@/lib/operations/useOps";
-import { isLiteMode } from "@/lib/liteMode";
+import { isLiteMode, LITE_BANNER_BODY } from "@/lib/liteMode";
 import { AlertsIncidentsPanel } from "@/components/operations/AlertsIncidentsPanel";
 import { CostBudgetPanel } from "@/components/operations/CostBudgetPanel";
 import { DataSourcesPanel } from "@/components/operations/DataSourcesPanel";
@@ -24,10 +24,9 @@ const IS_LITE = isLiteMode();
  *     IbmWorkload, QuantumBackends, ResourceUtilization, JobQueue,
  *     JobHistory, CostBudget, DataSources, AlertsIncidents — driven
  *     by `useOps()` polling /ops/* every 5s with seed fallback.
- *   - Lite (HF Space, static export): focused 3-panel layout matching
- *     the lite Settings page — top-level metrics, IBM workload, and
- *     the active job queue. The other panels are operational depth
- *     that doesn't earn its space in a public demo with seed data.
+ *   - Lite (HF Space, static export): same top three blocks as full
+ *     (metrics, IBM workload, job queue) with demo fixtures and badges;
+ *     no live refresh. Deeper panels are omitted to keep the demo focused.
  */
 export function OperationsClient() {
   const ops = useOps();
@@ -47,7 +46,7 @@ export function OperationsClient() {
           </h1>
           <p className="lede">
             {IS_LITE
-              ? "The systems-side view of what's running. Top-level metrics, the IBM Quantum workload, and the active job queue."
+              ? "Same three blocks as Hetionet Full—top metrics, IBM Quantum workload, active job queue—with illustrative fixtures while this static build runs without FastAPI."
               : "Operations is the systems-side view: are the quantum backends healthy, are upstream data sources fresh, what jobs are running, what's been spent. The Initialize → Visualize pipeline trusts that everything here is green."}
           </p>
         </div>
@@ -76,6 +75,21 @@ export function OperationsClient() {
       </div>
 
       <MetricStrip jobs={ops.jobs} cost={ops.cost} />
+      {IS_LITE ? (
+        <div
+          className="panel"
+          style={{
+            marginTop: 14,
+            borderColor: "var(--gold)",
+            padding: "12px 16px",
+          }}
+          role="note"
+        >
+          <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: "var(--muted)" }}>
+            {LITE_BANNER_BODY}
+          </p>
+        </div>
+      ) : null}
       <IbmWorkloadPanel ibm={ops.ibm} />
       <JobQueuePanel jobs={ops.jobs} />
 

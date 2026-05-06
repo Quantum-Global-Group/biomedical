@@ -113,6 +113,66 @@ export const SEED_IBM: IbmWorkloadResponse = {
   recentJobs: [],
 };
 
+/** IBM workload fixture for BUILD_TARGET=lite (HF Space) — mirrors validated Settings + full panel layout. */
+export const SEED_IBM_LITE: IbmWorkloadResponse = {
+  configured: true,
+  validated: true,
+  account: "demo-account",
+  instance: "hetqml_hf_demo",
+  region: "us-east",
+  plan: "open",
+  usage: {
+    quantumSecondsUsed: 420,
+    quantumSecondsAllocated: 5000,
+    concurrentJobs: 2,
+    jobsThisMonth: 18,
+    successRate: 0.94,
+    spendUsd: 42.5,
+  },
+  backendAccess: [
+    { backend: "ibm_torino", access: "allowed" },
+    { backend: "ibm_brisbane", access: "allowed" },
+    { backend: "ibm_kyoto", access: "sim" },
+    { backend: "ibm_marrakesh", access: "locked" },
+  ],
+  recentJobs: [
+    {
+      id: "runtime-c7a2-demo",
+      backend: "ibm_torino",
+      status: "completed",
+      durationSeconds: 38,
+    },
+    {
+      id: "runtime-b991-demo",
+      backend: "ibm_torino",
+      status: "completed",
+      durationSeconds: 52,
+    },
+    {
+      id: "runtime-a884-demo",
+      backend: "ibm_brisbane",
+      status: "failed",
+      durationSeconds: 12,
+    },
+  ],
+};
+
+/** All-green health strip for lite export (avoids ambiguous “degraded” on demo). */
+export const SEED_HEALTH_LITE: OpsHealthResponse = {
+  ...SEED_HEALTH,
+  overall: "healthy",
+  healthyCount: SEED_HEALTH.totalCount,
+  services: SEED_HEALTH.services.map((s) =>
+    s.state === "degraded" || s.state === "down"
+      ? {
+          ...s,
+          state: "healthy",
+          latencyMs: Math.min(s.latencyMs, 120),
+        }
+      : s,
+  ),
+};
+
 export const SEED_BACKENDS: OpsBackendsResponse = {
   backends: [
     {

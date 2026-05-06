@@ -604,8 +604,9 @@ export function SettingsClient({ initial }: { initial: InitialSettings }) {
 
       {IS_LITE ? (
         // Lite (HF Space) layout — keep only the three panels that are
-        // meaningful without a backend: identity (Profile), pipeline
-        // defaults, and the IBM Quantum BYOK fields. The rest
+        // meaningful without a backend: identity (Profile), pipeline /
+        // quantum defaults (matching the full app's two-column pairing),
+        // and IBM Quantum BYOK fields. The rest [...]
         // (Appearance, Quantum, Notifications, Privacy, the secondary
         // API Keys, Keyboard Shortcuts, About) are server-bound or
         // operationally meaningless in a static demo and would just
@@ -616,11 +617,18 @@ export function SettingsClient({ initial }: { initial: InitialSettings }) {
             onChange={(patch) => update("profile", patch)}
             dirty={dirtyKeys.has("profile")}
           />
-          <PipelinePanel
-            value={draft.pipeline}
-            onChange={(patch) => update("pipeline", patch)}
-            dirty={dirtyKeys.has("pipeline")}
-          />
+          <div className="grid-2">
+            <PipelinePanel
+              value={draft.pipeline}
+              onChange={(patch) => update("pipeline", patch)}
+              dirty={dirtyKeys.has("pipeline")}
+            />
+            <QuantumPanel
+              value={draft.quantum}
+              onChange={(patch) => update("quantum", patch)}
+              dirty={dirtyKeys.has("quantum")}
+            />
+          </div>
           <IbmConnectionPanel
             value={draft.ibmConnection}
             onChange={(patch) => update("ibmConnection", patch)}

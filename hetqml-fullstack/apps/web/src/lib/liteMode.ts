@@ -22,9 +22,10 @@ export function isLiteMode(): boolean {
 export const LITE_BADGE_LABEL = "Demo · HF Space";
 
 /**
- * What lite-mode visitors should know up-front. Used as the banner copy
- * on the Operations + Settings unavailable panels and (optionally) at
- * the top of the sidebar.
+ * What lite-mode visitors should know up-front. Used under Operations
+ * (HF Space builds) between the metric strip and IBM workload panels, and at
+ * the top of the sidebar. Settings no longer swaps in a blocker page — it
+ * uses the full form backed by localStorage.
  */
 export const LITE_BANNER_BODY =
   "Hetionet Lite is a public static build — no backend, no IBM auth, no decision " +

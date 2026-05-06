@@ -65,3 +65,21 @@ export const DEFAULT_SETTINGS: UserSettings = {
     sentryDsn: null,
   },
 };
+
+/** HF Space / static-lite initial document: aligns Settings IBM panel with Operations demo fixtures */
+export const SETTINGS_LITE_DEMO: UserSettings = {
+  ...DEFAULT_SETTINGS,
+  profile: {
+    reviewerName: "Demo reviewer",
+    role: "Space visitor",
+    organization: "(Hugging Face demo)",
+    contactEmail: "",
+  },
+  ibmConnection: {
+    apiToken: "",
+    crn: "crn:v1:bluemix:public:quantum-computing:us-east:a/demo:c4d89e11::",
+    validated: true,
+    planTier: "open",
+    instanceName: "hetqml_hf_demo",
+  },
+};

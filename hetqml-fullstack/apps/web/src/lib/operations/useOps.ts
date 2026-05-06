@@ -24,7 +24,9 @@ import {
   SEED_BACKENDS,
   SEED_COST,
   SEED_HEALTH,
+  SEED_HEALTH_LITE,
   SEED_IBM,
+  SEED_IBM_LITE,
   SEED_JOBS,
   SEED_RESOURCES,
   SEED_SOURCES,
@@ -76,8 +78,12 @@ export interface OpsState {
  * the UI surface a "live" vs "fallback" hint.
  */
 export function useOps(intervalMs: number = POLL_INTERVAL_MS): OpsState {
-  const [health, setHealth] = useState<OpsHealthResponse>(SEED_HEALTH);
-  const [ibm, setIbm] = useState<IbmWorkloadResponse>(SEED_IBM);
+  const [health, setHealth] = useState<OpsHealthResponse>(
+    IS_LITE ? SEED_HEALTH_LITE : SEED_HEALTH,
+  );
+  const [ibm, setIbm] = useState<IbmWorkloadResponse>(
+    IS_LITE ? SEED_IBM_LITE : SEED_IBM,
+  );
   const [backends, setBackends] = useState<OpsBackendsResponse>(SEED_BACKENDS);
   const [jobs, setJobs] = useState<OpsJobsResponse>(SEED_JOBS);
   const [resources, setResources] =

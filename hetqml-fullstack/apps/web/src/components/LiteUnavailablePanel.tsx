@@ -1,11 +1,9 @@
 /**
  * LiteUnavailablePanel
  *
- * Rendered in place of the Operations and Settings client trees when
- * `BUILD_TARGET=lite`. Those routes call live backend endpoints
- * (ops/health, ops/jobs, decisions, notes, settings) that don't exist
- * in the static export — better to surface a friendly "this lives in
- * the full version" panel than to ship a broken page.
+ * Legacy placeholder for visualize-only messaging. Settings and Operations
+ * in the lite build now render full client trees backed by fixtures and
+ * localStorage (`SETTINGS_LITE_DEMO`, `useOps()` lite seeds).
  *
  * Server component; ships zero JS.
  */

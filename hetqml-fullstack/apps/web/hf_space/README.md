@@ -23,8 +23,8 @@ This Space surfaces the **research-narrative shell**: Initialize → Experiment 
 
 ## What’s locked out vs the full version
 
-- **Operations** and **Settings** routes show a "live-only" panel — no platform health, no IBM Quantum BYOK, no decision history.
-- **Validate** Reviewer-Decision panel and Skeptic-Notes editor are display-only (no backend to persist Keep/Review/Reject).
+- **Settings → IBM smoke test / live validation** calls FastAPI endpoints that are omitted in static export (`Validate connection` saves locally only; IBM panels on Operations remain fixtures).
+- **Validate** reviewer-decision panel and Skeptic-Notes editor are display-only (no backend to persist Keep/Review/Reject).
 - **Visualize** is a placeholder — the 3D molecule / KG / UMAP / quantum kernel circuit panels are migration-in-progress for both the full and lite versions.
 
 ## Build and publish

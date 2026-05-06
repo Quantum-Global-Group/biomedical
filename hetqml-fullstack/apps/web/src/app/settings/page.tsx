@@ -1,15 +1,13 @@
 import { AppShell } from "@/components/shell/AppShell";
 import { isLiteMode } from "@/lib/liteMode";
-import {
-  fetchSettingsForServerComponent,
-  SETTINGS_FALLBACK,
-} from "@/lib/data/fetchSettingsServer";
+import { fetchSettingsForServerComponent } from "@/lib/data/fetchSettingsServer";
+import { SETTINGS_LITE_DEMO } from "@/lib/settings/defaults";
 import { SettingsClient } from "./SettingsClient";
 
 // Settings renders in both build targets:
 //   - Standalone (full): server fetches /settings, hydrates the form.
 //   - Lite (HF Space, static export): no backend at build time, so we
-//     hand the SettingsClient the schema-default fallback. The client
+//     SETTINGS_LITE_DEMO so the IBM panel matches Operations fixtures; the client
 //     swaps its save/validate calls for localStorage-only persistence
 //     when isLiteMode() is true (see SettingsClient.tsx).
 //
@@ -23,7 +21,7 @@ export default async function SettingsPage() {
         <SettingsClient
           initial={{
             source: "fallback",
-            settings: SETTINGS_FALLBACK,
+            settings: SETTINGS_LITE_DEMO,
             error: null,
           }}
         />

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import type { IbmWorkloadResponse } from "@/lib/api/client";
+import { isLiteMode } from "@/lib/liteMode";
 import { formatDuration, formatPct, formatUsd } from "@/lib/operations/format";
 
 interface Props {
@@ -17,11 +18,14 @@ interface Props {
  *    last 5 jobs
  */
 export function IbmWorkloadPanel({ ibm }: Props) {
-  const badge = ibm.configured
-    ? ibm.validated
-      ? "Live"
-      : "Awaiting validation"
-    : "Not configured";
+  const lite = isLiteMode();
+  const badge = lite
+    ? "Demo"
+    : ibm.configured
+      ? ibm.validated
+        ? "Live"
+        : "Awaiting validation"
+      : "Not configured";
 
   return (
     <section className="panel">
