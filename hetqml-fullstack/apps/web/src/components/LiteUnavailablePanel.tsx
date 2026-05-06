@@ -15,7 +15,7 @@ import { LITE_BANNER_BODY } from "@/lib/liteMode";
 
 interface Props {
   /** Which page is showing this — drives the page-hero + step label. */
-  page: "operations" | "settings";
+  page: "operations" | "settings" | "visualize";
 }
 
 const PAGE_COPY: Record<
@@ -38,6 +38,16 @@ const PAGE_COPY: Record<
       "preference toggles in localStorage tied to a backend. The static export " +
       "has no backend to validate keys against, so this page is intentionally " +
       "locked.",
+  },
+  visualize: {
+    step: "04 · VISUALIZE (LITE)",
+    title: "Visualize is live-only",
+    lede:
+      "Visualize renders 13 panels driven by a completed job — 3D knowledge " +
+      "graph, molecule viewer, quantum circuit, evidence overlays, UMAP, " +
+      "model agreement, and more. All of those need a live FastAPI run with " +
+      "real result tensors. The static export ships no backend, and dropping " +
+      "the 3D + quantum-circuit dependencies keeps the HF bundle small.",
   },
 };
 

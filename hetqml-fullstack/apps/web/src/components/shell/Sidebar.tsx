@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { isLiteMode, LITE_BADGE_LABEL } from "@/lib/liteMode";
 
 import { DashboardModeToggle } from "./DashboardModeToggle";
+import { LiteThemeToggle } from "./LiteThemeToggle";
 
 const APP_VER = "v0.7.2";
 
@@ -87,6 +88,11 @@ export function Sidebar({ active }: SidebarProps) {
         </Link>
       ))}
       <DashboardModeToggle />
+      {isLiteMode() ? (
+        <div style={{ marginTop: 12 }}>
+          <LiteThemeToggle />
+        </div>
+      ) : null}
       {isLiteMode() ? <LiteBadge /> : <FullModeStatus />}
     </aside>
   );

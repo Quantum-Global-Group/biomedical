@@ -1,6 +1,4 @@
 import { AppShell } from "@/components/shell/AppShell";
-import { LiteUnavailablePanel } from "@/components/LiteUnavailablePanel";
-import { isLiteMode } from "@/lib/liteMode";
 import { OperationsClient } from "./OperationsClient";
 
 // Operations renders in both build targets:
@@ -12,19 +10,6 @@ import { OperationsClient } from "./OperationsClient";
 //     vs "seed" footers show every feed as `seed`, and the page banner
 //     reads "demo data — full version polls a live FastAPI".
 export default function OperationsPage() {
-  // Lite (static-export) builds have no backend; the OperationsClient
-  // fetches from /ops/* endpoints that don't exist there. Render the
-  // unavailable panel instead. The lite-mode check is constant-folded
-  // at build time, so the OperationsClient bundle stays out of the
-  // lite ship.
-  if (isLiteMode()) {
-    return (
-      <AppShell active="/operations">
-        <LiteUnavailablePanel page="operations" />
-      </AppShell>
-    );
-  }
-
   return (
     <AppShell active="/operations">
       <OperationsClient />

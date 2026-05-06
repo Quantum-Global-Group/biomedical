@@ -1,0 +1,266 @@
+/*
+ * lite-theme.css — Hugging Face Space (BUILD_TARGET=lite) skin.
+ *
+ * Active under `<html data-lite="true">` (set by RootLayout when
+ * isLiteMode()). Loaded ONLY in the lite build, so the full app's
+ * production CSS stays unchanged byte-for-byte.
+ *
+ * Two palette variants live here, keyed off `data-lite-theme`:
+ *
+ *   data-lite-theme="light" (default) — clean off-white, near-black ink,
+ *     deep teal accent, indigo pop. WCAG-AA contrast across body copy
+ *     and accent text on white.
+ *
+ *   data-lite-theme="dark" — soft GitHub-style dark, cool white ink,
+ *     cyan accent. Same visual hierarchy, inverted background; same
+ *     accent positions so the page identity carries between modes.
+ *
+ * The `LiteThemeProvider` flips the attribute based on user choice
+ * (persisted as `hetqml.liteTheme` in localStorage). Structural
+ * overrides (layout, typography, hover states, focus rings) sit
+ * outside the palette block so they apply regardless of light/dark.
+ */
+
+/* ---------- Light palette (default) -------------------------------- */
+html[data-lite="true"][data-lite-theme="light"],
+html[data-lite="true"]:not([data-lite-theme="dark"]) {
+  --paper: #f7f7f4;
+  --paper-alt: #eef0ec;
+  --card: #ffffff;
+  --border: #d8dad6;
+  --border-soft: #e7e8e4;
+  --ink: #15181c;
+  --muted: #4a5158;
+  --faint: #6b7178;
+  --gold: #1e6f8f;
+  --teal: #1e6f8f;
+  --teal-light: #e6f1f5;
+  --green: #2f7d4f;
+  --green-bg: #e7f3eb;
+  --amber: #8a5a18;
+  --amber-bg: #f5ecd9;
+  --sienna: #b04a3a;
+  --sienna-bg: #f6e3df;
+  --purple: #3a4d8a;
+}
+
+/* ---------- Dark palette -------------------------------------------- */
+html[data-lite="true"][data-lite-theme="dark"] {
+  --paper: #0d1117;
+  --paper-alt: #161b22;
+  --card: #1a212c;
+  --border: #30363d;
+  --border-soft: #22272e;
+  --ink: #e6edf3;
+  --muted: #8b949e;
+  --faint: #6e7681;
+  --gold: #5dd6e6;
+  --teal: #5dd6e6;
+  --teal-light: #103043;
+  --green: #6ed493;
+  --green-bg: #102a1c;
+  --amber: #e0b46a;
+  --amber-bg: #2b2210;
+  --sienna: #ff9b6a;
+  --sienna-bg: #2a1612;
+  --purple: #9d8cff;
+}
+
+/* ---------- Structural overrides (palette-agnostic) ---------------- */
+
+html[data-lite="true"] body {
+  font-weight: 400;
+  letter-spacing: 0;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+html[data-lite="true"] .sidebar {
+  background: var(--paper-alt);
+  border-right: 1px solid var(--border);
+  box-shadow: none;
+}
+
+html[data-lite="true"] .sidebar .brand-name {
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--ink);
+}
+
+html[data-lite="true"] .sidebar .brand-ver {
+  color: var(--gold);
+  font-weight: 600;
+}
+
+html[data-lite="true"] .sidebar .brand-ver::before {
+  content: "lite ";
+  color: var(--purple);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+html[data-lite="true"] .sidebar a,
+html[data-lite="true"] .sidebar [role="link"] {
+  color: var(--muted);
+}
+
+html[data-lite="true"] .sidebar a:hover,
+html[data-lite="true"] .sidebar [role="link"]:hover {
+  color: var(--ink);
+  background: rgba(30, 111, 143, 0.06);
+}
+
+html[data-lite="true"][data-lite-theme="dark"] .sidebar a:hover,
+html[data-lite="true"][data-lite-theme="dark"] .sidebar [role="link"]:hover {
+  background: rgba(93, 214, 230, 0.08);
+}
+
+html[data-lite="true"] .sidebar a[aria-current="page"],
+html[data-lite="true"] .sidebar a.active,
+html[data-lite="true"] .sidebar [role="link"][aria-current="page"] {
+  color: var(--ink);
+  background: rgba(30, 111, 143, 0.1);
+  border-left: 3px solid var(--gold);
+}
+
+html[data-lite="true"][data-lite-theme="dark"] .sidebar a[aria-current="page"],
+html[data-lite="true"][data-lite-theme="dark"] .sidebar a.active,
+html[data-lite="true"][data-lite-theme="dark"] .sidebar [role="link"][aria-current="page"] {
+  background: rgba(93, 214, 230, 0.12);
+}
+
+html[data-lite="true"] .page-hero {
+  padding-top: 4px;
+}
+
+html[data-lite="true"] .page-hero .step {
+  color: var(--gold);
+  letter-spacing: 0.14em;
+  font-size: 10.5px;
+  font-weight: 700;
+  font-family: var(--font-mono), SF Mono, Monaco, monospace;
+}
+
+html[data-lite="true"] .page-hero .h1 {
+  font-weight: 600;
+  font-size: 26px;
+  letter-spacing: -0.005em;
+  color: var(--ink);
+  line-height: 1.25;
+}
+
+html[data-lite="true"] .page-hero .lede {
+  color: var(--muted);
+  max-width: 64ch;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+html[data-lite="true"] .panel {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 1px 2px rgba(15, 24, 32, 0.04);
+}
+
+html[data-lite="true"][data-lite-theme="dark"] .panel {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+html[data-lite="true"] .panel-head {
+  border-bottom: 1px solid var(--border-soft);
+}
+
+html[data-lite="true"] .panel-title {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+html[data-lite="true"] .eyebrow {
+  color: var(--purple);
+  letter-spacing: 0.12em;
+  font-weight: 700;
+  font-family: var(--font-mono), SF Mono, Monaco, monospace;
+  font-size: 10px;
+}
+
+html[data-lite="true"] .panel-purpose {
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+html[data-lite="true"] .panel-footer {
+  color: var(--faint);
+  border-top: 1px solid var(--border-soft);
+}
+
+html[data-lite="true"] .badge,
+html[data-lite="true"] .pill {
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--gold);
+  font-weight: 600;
+}
+
+html[data-lite="true"] .btn-primary {
+  background: var(--gold);
+  color: #ffffff;
+  border-color: var(--gold);
+  font-weight: 600;
+}
+
+html[data-lite="true"][data-lite-theme="dark"] .btn-primary {
+  color: #042033;
+}
+
+html[data-lite="true"] .btn-primary:hover {
+  filter: brightness(1.08);
+}
+
+html[data-lite="true"] .btn {
+  background: var(--card);
+  color: var(--ink);
+  border-color: var(--border);
+}
+
+html[data-lite="true"] .btn:hover {
+  background: var(--paper-alt);
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+html[data-lite="true"] .combo,
+html[data-lite="true"] .combo-input,
+html[data-lite="true"] input,
+html[data-lite="true"] select,
+html[data-lite="true"] textarea {
+  background: var(--card);
+  border-color: var(--border);
+  color: var(--ink);
+}
+
+html[data-lite="true"] .combo:focus-within,
+html[data-lite="true"] .combo-input:focus,
+html[data-lite="true"] input:focus,
+html[data-lite="true"] select:focus,
+html[data-lite="true"] textarea:focus {
+  border-color: var(--gold);
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(30, 111, 143, 0.18);
+}
+
+html[data-lite="true"][data-lite-theme="dark"]
+  .combo:focus-within,
+html[data-lite="true"][data-lite-theme="dark"] .combo-input:focus,
+html[data-lite="true"][data-lite-theme="dark"] input:focus,
+html[data-lite="true"][data-lite-theme="dark"] select:focus,
+html[data-lite="true"][data-lite-theme="dark"] textarea:focus {
+  box-shadow: 0 0 0 2px rgba(93, 214, 230, 0.22);
+}
+
+html[data-lite="true"] .combo-chev,
+html[data-lite="true"] .field-label,
+html[data-lite="true"] label {
+  color: var(--muted);
+}

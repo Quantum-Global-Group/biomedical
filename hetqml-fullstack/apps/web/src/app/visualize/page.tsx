@@ -2,6 +2,7 @@ import { AppShell } from "@/components/shell/AppShell";
 import { fetchJobForServerComponent } from "@/lib/data/fetchJobServer";
 import { isLiteMode } from "@/lib/liteMode";
 import { VisualizeClient } from "./VisualizeClient";
+import { VisualizeLite } from "./VisualizeLite";
 
 interface PageProps {
   // Next 16 — searchParams is async.
@@ -9,13 +10,20 @@ interface PageProps {
 }
 
 // Lite (output: "export") build short-circuits before `await searchParams`
-// so the route prerenders fully static. See settings/page.tsx for the
-// rationale; Next 16 forbids expression-valued `dynamic` exports.
+// so the route prerenders fully static and `VisualizeClient` is tree-shaken
+// out of the lite bundle. The full visualizer pulls three.js (3D KG,
+// molecule viewer) plus the quantum-circuit renderer; lite renders a
+// 3-panel demo (path / evidence matrix / model agreement) using static
+// fixtures instead.
+//
+// Next 16 forbids expression-valued `dynamic` exports — see
+// settings/page.tsx for the same two-build pattern using a
+// constant-folded `isLiteMode()` guard.
 export default async function VisualizePage({ searchParams }: PageProps) {
   if (isLiteMode()) {
     return (
       <AppShell active="/visualize">
-        <VisualizeClient jobIdFromUrl={null} initialJob={null} />
+        <VisualizeLite />
       </AppShell>
     );
   }
