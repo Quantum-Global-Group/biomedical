@@ -27,7 +27,7 @@ export const LITE_BADGE_LABEL = "Demo · HF Space";
  * the top of the sidebar.
  */
 export const LITE_BANNER_BODY =
-  "This is the public lite build — no backend, no IBM auth, no decision " +
+  "Hetionet Lite is a public static build — no backend, no IBM auth, no decision " +
   "logging. Initialize / Experiment / Validate render with mock data so " +
   "you can click through the workflow. Hetionet Full (live FastAPI + " +
   "IBM Quantum BYOK + decision audit) is the Fly.io / internal deployment.";

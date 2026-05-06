@@ -81,22 +81,87 @@ html[data-lite="true"] .sidebar {
   box-shadow: none;
 }
 
+/* Collapse control: align with top of sidebar padding; spacing before brand block. */
+html[data-lite="true"] .sidebar .sidebar-header-row {
+  margin: 0 0 12px;
+  justify-content: flex-end;
+}
+
+/* Brand stack — left-aligned type, icon tile, clear hierarchy (export used align-items: center). */
+html[data-lite="true"] .sidebar .brand {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 0 0 4px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+html[data-lite="true"] .sidebar .brand-icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--teal) 14%, var(--card));
+  border: 1px solid var(--border-soft);
+  color: var(--teal);
+  font-size: 1.05rem;
+  line-height: 1;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.055);
+}
+
+html[data-lite="true"][data-lite-theme="dark"] .sidebar .brand-icon {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+}
+
+html[data-lite="true"] .sidebar .brand-text {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
 html[data-lite="true"] .sidebar .brand-name {
+  font-size: 1.06rem;
+  line-height: 1.22;
   font-weight: 600;
-  letter-spacing: -0.005em;
+  letter-spacing: -0.02em;
   color: var(--ink);
 }
 
+html[data-lite="true"] .sidebar .brand-tagline {
+  margin-top: 7px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1.45;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  max-width: 15.5rem;
+}
+
 html[data-lite="true"] .sidebar .brand-ver {
-  color: var(--gold);
+  margin-top: 10px;
+  font-size: 0.62rem;
   font-weight: 600;
+  letter-spacing: 0.14em;
+  color: var(--gold);
 }
 
 html[data-lite="true"] .sidebar .brand-ver::before {
   content: "lite ";
   color: var(--purple);
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
+}
+
+html[data-lite="true"] body.sidebar-collapsed .sidebar .brand {
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
 }
 
 html[data-lite="true"] .sidebar a,
