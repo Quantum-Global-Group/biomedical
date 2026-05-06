@@ -8,7 +8,7 @@ import {
   productBrandName,
   productTagline,
 } from "@/lib/branding";
-import { isLiteMode, LITE_BADGE_LABEL } from "@/lib/liteMode";
+import { isLiteMode, isLiteStaticDemo, LITE_BADGE_LABEL } from "@/lib/liteMode";
 
 import { DashboardModeToggle } from "./DashboardModeToggle";
 import { LiteThemeToggle } from "./LiteThemeToggle";
@@ -176,7 +176,9 @@ function LiteBadge() {
           lineHeight: 1.4,
         }}
       >
-        Static build · no backend · mock data only
+        {isLiteStaticDemo()
+          ? "Static build · no backend · mock data only"
+          : "Static UI · HetQML API (Fly) · Settings & Ops live"}
       </div>
     </div>
   );
