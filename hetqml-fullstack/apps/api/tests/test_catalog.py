@@ -62,6 +62,19 @@ async def test_integrity_guards_catalog_hits_23(client):
     assert len(body["items"]) == 23
     critical_count = sum(1 for g in body["items"] if g["critical"])
     assert critical_count >= 5  # several critical guards exist
+    # Every guard belongs to one of the six Initialize · Evidence-posture
+    # groups (mirrored from the static export verbatim) so downstream pages
+    # can render the same grouping.
+    expected_groups = {
+        "Bias / equity",
+        "Data quality",
+        "Statistical rigor",
+        "Reproducibility",
+        "Quantum integrity",
+        "Hetionet integrity",
+    }
+    seen_groups = {item["group"] for item in body["items"]}
+    assert seen_groups == expected_groups, seen_groups
 
 
 async def test_catalogs_are_deterministic(client):

@@ -6,10 +6,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from hetqml_api.jobs.runner import Runner
-from hetqml_api.jobs.store import InMemoryJobStore
 from hetqml_api.ops.provider import CannedOpsProvider
 from hetqml_api.persistence.sqlite import (
     SqliteDecisionStore,
+    SqliteJobStore,
     SqliteNoteStore,
     SqliteSettingsStore,
     init_schema,
@@ -20,6 +20,7 @@ from hetqml_api.routers import (
     decisions,
     investigations,
     jobs,
+    molecule,
     notes,
     ops,
     preregistration,
@@ -56,20 +57,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # module-level get_settings(), which can't be overridden per test.
     app.state.settings = cfg
 
-    store = InMemoryJobStore()
-    app.state.job_store = store
-    app.state.job_runner = Runner(store)
-    app.state.ops_provider = CannedOpsProvider(ibm_crn=cfg.ibm_crn or None)
-
-    # sqlite-backed persistence (decisions, skeptic notes, user settings).
-    # The connection is shared across stores; each store carries its own
-    # asyncio.Lock so writes serialize without contending on reads.
+    # sqlite-backed persistence (jobs, decisions, skeptic notes, user
+    # settings). The connection is shared across stores; each store carries
+    # its own asyncio.Lock so writes serialize without contending on reads.
+    # Jobs went from InMemoryJobStore → SqliteJobStore so they survive
+    # `uvicorn --reload` and process restarts.
     sqlite_conn = open_connection(cfg.sqlite_path)
     init_schema(sqlite_conn)
     app.state.sqlite_conn = sqlite_conn
     app.state.decision_store = SqliteDecisionStore(sqlite_conn)
     app.state.note_store = SqliteNoteStore(sqlite_conn)
     app.state.settings_store = SqliteSettingsStore(sqlite_conn)
+
+    job_store = SqliteJobStore(sqlite_conn)
+    app.state.job_store = job_store
+    # The runner needs settings to resolve IBM credentials per-job for the
+    # quantum/hybrid families; we pass the settings_store rather than a
+    # snapshot so credential rotations take effect on the next job.
+    app.state.job_runner = Runner(job_store, settings_store=app.state.settings_store)
+    app.state.ops_provider = CannedOpsProvider(ibm_crn=cfg.ibm_crn or None)
 
     app.include_router(investigations.router)
     app.include_router(jobs.router)
@@ -79,6 +85,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(notes.router)
     app.include_router(settings_router.router)
     app.include_router(preregistration.router)
+    app.include_router(molecule.router)
 
     @app.get("/health", tags=["meta"])
     async def health() -> dict[str, str]:

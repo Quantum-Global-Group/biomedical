@@ -58,6 +58,12 @@ class CompoundEntry(CamelModel):
     drugbank_id: str
     therapeutic_class: str
     fda_approved: bool
+    # PubChem CID for the 3D molecule viewer. Curated compounds carry the
+    # real CID; synthetic placeholder compounds have None and the viewer
+    # falls back to a "no 3D model available" state. Adding this here is
+    # cheaper than a separate /catalog/compound/<id>/cid endpoint and
+    # keeps the wire shape camelCase via CamelModel.
+    pubchem_cid: int | None = None
 
 
 class GeneEntry(CamelModel):
@@ -88,6 +94,10 @@ class IntegrityGuardEntry(CamelModel):
     description: str
     critical: bool
     default_on: bool
+    # Top-level group as rendered on Initialize · Evidence posture. Mirrors
+    # the static export (`hetqml-pages/initialize/index.html`) verbatim so
+    # downstream pages can group the same 23 guards into the same buckets.
+    group: str
 
 
 class CatalogEnvelope(CamelModel):
@@ -162,6 +172,10 @@ class LeaderboardRow(CamelModel):
     roc_auc: float
     delta_classical: float
     is_top: bool = False
+    # Display-formatted parameter count for the leaderboard's "params" column
+    # and the footer's path-aware param-ratio line (e.g. "28", "2.1k", "18k").
+    # Matches the value AlgorithmEntry.params already exposes in the catalog.
+    params: str = "—"
 
 
 class BenchmarkRow(CamelModel):
@@ -349,6 +363,15 @@ class JobResult(CamelModel):
     quantum_circuit: QuantumCircuitInfo
     evidence_path: EvidencePath
 
+    # 2D embedding coordinates for the Visualize · 3D UMAP scatter, one
+    # row per leaderboard pair (in the same order as `candidate_spotlight.
+    # ranking`). The first row corresponds to the focus pair (rank 1) and
+    # is highlighted client-side. Coordinates are deterministic from the
+    # job seed — see `_embedding` in the runner — so refreshes don't
+    # shuffle the layout. Values are roughly in [-1, 1]. None when the
+    # job hasn't completed yet; populated for every completed job.
+    embedding: list[list[float]] | None = None
+
 
 class Job(CamelModel):
     id: str
@@ -369,6 +392,17 @@ DecisionVerdict = Literal["keep", "review", "reject"]
 
 
 class DecisionRecord(CamelModel):
+    """Reviewer decision audit record.
+
+    All five "what did the reviewer see when they clicked" fields are
+    captured: pair, run path + ML run id, scorecard composite + axes,
+    integrity-guard snapshot (full per-guard pass state, not just the
+    compromised count), CV-variance summary, and the evidence sources
+    that fed the decision. The fields the static export's "decision_log"
+    contract enumerates all live here so a future audit can reconstruct
+    the exact view at decision time.
+    """
+
     id: str
     pair_key: str  # f"{compoundId}::{diseaseId}"
     verdict: DecisionVerdict
@@ -381,6 +415,18 @@ class DecisionRecord(CamelModel):
     trust_score: float
     trust_axes: list[TrustAxis]
     guards_compromised: int
+    # Full snapshot of the integrity-guard panel at decision time so an
+    # auditor can replay which guards were on/off without re-running the
+    # job. Optional for backwards compatibility with pre-migration records.
+    integrity_guards: list[IntegrityGuardState] | None = None
+    # ML run id (jobId) and CV-variance summary captured server-side so
+    # the decision binds to a specific reproducible run, not just a pair.
+    job_id: str | None = None
+    cv_std: float | None = None
+    # Provenance / evidence-source paths surfaced on the Visualize page
+    # at the time of the decision (e.g. ["runs/<jobId>/provenance.json",
+    # "qk-meta/calibration_diagnostics.json"]).
+    evidence_sources: list[str] = Field(default_factory=list)
     timestamp: datetime
     note: str | None = None
 
@@ -397,6 +443,10 @@ class DecisionCreateRequest(CamelModel):
     trust_score: float
     trust_axes: list[TrustAxis]
     guards_compromised: int
+    integrity_guards: list[IntegrityGuardState] | None = None
+    job_id: str | None = None
+    cv_std: float | None = None
+    evidence_sources: list[str] = Field(default_factory=list)
     note: str | None = None
 
 
@@ -447,6 +497,11 @@ class QuantumSettings(CamelModel):
 
 class IbmConnectionSettings(CamelModel):
     crn: str = ""
+    # IBM Quantum Platform API token (BYOK). Persisted alongside the CRN so
+    # the runner can submit real-hardware quantum jobs when the user opts
+    # into family=quantum runs. Empty string disables hardware execution
+    # and the runner falls back to the local Aer simulator.
+    api_token: str = ""
     validated: bool = False
     plan_tier: str | None = None
     instance_name: str | None = None

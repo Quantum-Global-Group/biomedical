@@ -25,7 +25,7 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
-from hetqml_api.schemas import DecisionRecord, SkepticNote, UserSettings
+from hetqml_api.schemas import DecisionRecord, Job, SkepticNote, UserSettings
 
 
 def open_connection(path: Path) -> sqlite3.Connection:
@@ -66,6 +66,16 @@ def init_schema(conn: sqlite3.Connection) -> None:
             payload     TEXT NOT NULL,  -- UserSettings as JSON
             updated_at  TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS jobs (
+            id            TEXT PRIMARY KEY,
+            status        TEXT NOT NULL,
+            created_at    TEXT NOT NULL,
+            completed_at  TEXT,
+            payload       TEXT NOT NULL  -- Job model serialized as JSON
+        );
+        CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
         """
     )
     conn.commit()
@@ -217,3 +227,95 @@ class SqliteSettingsStore:
         async with self._lock:
             await asyncio.to_thread(_write)
         return settings
+
+
+# --- Job store -------------------------------------------------------------
+
+
+class SqliteJobStore:
+    """File-backed job store.
+
+    Implements the `JobStore` protocol from `jobs/store.py`.  Persists each
+    job as a JSON blob keyed by id; status + created_at are normalized so
+    queries (e.g. listing recent runs) don't have to scan-and-parse every
+    row.  Survives `uvicorn --reload` and process restarts.
+
+    Concurrency model mirrors the other sqlite stores: a single connection
+    serialized via the per-store `asyncio.Lock`, with the actual sqlite
+    calls dispatched to a worker thread so the loop never blocks.
+    """
+
+    def __init__(
+        self, conn: sqlite3.Connection, *, lock: asyncio.Lock | None = None
+    ) -> None:
+        self._conn = conn
+        self._lock = lock or asyncio.Lock()
+
+    async def create(self, job: Job) -> Job:
+        payload = job.model_dump_json(by_alias=True)
+        completed = job.completed_at.isoformat() if job.completed_at else None
+
+        def _write() -> None:
+            self._conn.execute(
+                """
+                INSERT INTO jobs (id, status, created_at, completed_at, payload)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (job.id, job.status, job.created_at.isoformat(), completed, payload),
+            )
+            self._conn.commit()
+
+        async with self._lock:
+            await asyncio.to_thread(_write)
+        return job
+
+    async def get(self, job_id: str) -> Job | None:
+        def _read() -> sqlite3.Row | None:
+            cur = self._conn.execute(
+                "SELECT payload FROM jobs WHERE id = ?",
+                (job_id,),
+            )
+            return cur.fetchone()
+
+        async with self._lock:
+            row = await asyncio.to_thread(_read)
+        if row is None:
+            return None
+        return Job.model_validate_json(row["payload"])
+
+    async def update(self, job: Job) -> Job:
+        # Upsert — runner often calls update before create has flushed in
+        # certain race conditions during shutdown; ON CONFLICT keeps the
+        # call site simple.
+        payload = job.model_dump_json(by_alias=True)
+        completed = job.completed_at.isoformat() if job.completed_at else None
+
+        def _write() -> None:
+            self._conn.execute(
+                """
+                INSERT INTO jobs (id, status, created_at, completed_at, payload)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    status = excluded.status,
+                    completed_at = excluded.completed_at,
+                    payload = excluded.payload
+                """,
+                (job.id, job.status, job.created_at.isoformat(), completed, payload),
+            )
+            self._conn.commit()
+
+        async with self._lock:
+            await asyncio.to_thread(_write)
+        return job
+
+    async def list(self) -> list[Job]:
+        def _read() -> list[sqlite3.Row]:
+            return list(
+                self._conn.execute(
+                    "SELECT payload FROM jobs ORDER BY created_at DESC"
+                )
+            )
+
+        async with self._lock:
+            rows = await asyncio.to_thread(_read)
+        return [Job.model_validate_json(r["payload"]) for r in rows]

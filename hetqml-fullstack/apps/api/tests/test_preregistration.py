@@ -46,7 +46,7 @@ def app_with_bootstrap_path(tmp_path, request):
     application = create_app(settings)
     store = InMemoryJobStore()
     application.state.job_store = store
-    application.state.job_runner = Runner(store, runtime_seconds=0.01)
+    application.state.job_runner = Runner(store, synthetic_only=True)
     return application
 
 

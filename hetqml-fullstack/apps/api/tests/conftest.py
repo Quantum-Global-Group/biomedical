@@ -12,7 +12,11 @@ from hetqml_api.settings import Settings
 @pytest.fixture
 def app(tmp_path):
     """Fresh app per test with:
-    - fast (sleep ~0) runner so polling tests stay quick;
+    - in-memory job store so polling tests stay fast and don't fight a
+      real sqlite file across cases;
+    - synthetic-only runner that skips the (slow) real ML dispatcher so
+      job-lifecycle tests still complete in milliseconds. Tests that
+      exercise real algorithms instantiate their own Runner.
     - sqlite db rooted in a per-test tmp_path so persistence tests don't
       bleed across each other.
     """
@@ -23,7 +27,7 @@ def app(tmp_path):
     application = create_app(settings)
     store = InMemoryJobStore()
     application.state.job_store = store
-    application.state.job_runner = Runner(store, runtime_seconds=0.01)
+    application.state.job_runner = Runner(store, synthetic_only=True)
     return application
 
 

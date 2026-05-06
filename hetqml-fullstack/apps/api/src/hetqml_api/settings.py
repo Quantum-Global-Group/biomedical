@@ -34,6 +34,13 @@ class Settings(BaseSettings):
     # `fly secrets set BOOTSTRAP_CI_PATH=/srv/hybrid-qml-kg-poc/docs/results/bootstrap_ci_analysis.md`).
     bootstrap_ci_path: Path = Path("docs/results/bootstrap_ci_analysis.md")
 
+    # PubChem REST base + on-disk SDF cache. Each /molecule/{cid} response
+    # is written once to <data_dir>/pubchem-sdf/<cid>.sdf so we don't pound
+    # PubChem on repeated reloads. Tests override `pubchem_base_url` to
+    # point at httpx.MockTransport.
+    pubchem_base_url: str = "https://pubchem.ncbi.nlm.nih.gov/rest/pug"
+    molecule_cache_subdir: str = "pubchem-sdf"
+
     model_config = SettingsConfigDict(env_file=".env", env_prefix="", case_sensitive=False)
 
     @property
@@ -43,6 +50,10 @@ class Settings(BaseSettings):
     @property
     def sqlite_path(self) -> Path:
         return self.data_dir / self.sqlite_filename
+
+    @property
+    def molecule_cache_dir(self) -> Path:
+        return self.data_dir / self.molecule_cache_subdir
 
 
 @lru_cache(maxsize=1)

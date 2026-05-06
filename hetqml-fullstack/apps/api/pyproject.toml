@@ -8,6 +8,16 @@ dependencies = [
     "uvicorn[standard]>=0.30.0",
     "pydantic>=2.9.0",
     "pydantic-settings>=2.5.0",
+    # ML + quantum stack used by the algorithm dispatcher in jobs/runner.py.
+    # numpy + scikit-learn drive the classical baseline + hybrid SVM head.
+    # qiskit + qiskit-aer compute a local ZZ-feature-map kernel matrix.
+    # qiskit-ibm-runtime is opt-in: only invoked when the user has both
+    # ibmConnection.apiToken and ibmConnection.crn set in /settings.
+    "numpy>=2.0.0",
+    "scikit-learn>=1.5.0",
+    "qiskit>=1.2.0",
+    "qiskit-aer>=0.15.0",
+    "qiskit-ibm-runtime>=0.30.0",
 ]
 
 [dependency-groups]

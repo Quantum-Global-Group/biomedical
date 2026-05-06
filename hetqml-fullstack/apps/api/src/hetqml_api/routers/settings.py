@@ -52,10 +52,16 @@ async def validate_ibm_connection(
 ) -> UserSettings:
     """Validate the persisted IBM Quantum connection.
 
-    Stub validator (v1): inspects the persisted ``IbmConnectionSettings``
-    and flips ``validated`` to True iff the three required fields are
-    present.  When fields are missing, returns 400 with a hint about
-    which key is empty so the UI can highlight the right input.
+    Two modes:
+
+      - **Field check** (no api_token persisted): require ``crn`` and
+        ``instanceName`` to be non-empty. Flips ``validated`` to True
+        when both are present. 400 lists the missing fields.
+      - **Live check** (api_token + crn persisted): instantiates a
+        ``QiskitRuntimeService`` against IBM Cloud and pulls the backend
+        list. A successful call flips ``validated`` to True; a connection
+        failure returns 400 with the upstream error so the UI can surface
+        a precise message.
 
     Returns the updated `UserSettings` document so the client can
     overwrite local state without an extra GET.
@@ -64,22 +70,10 @@ async def validate_ibm_connection(
     ibm = settings.ibm_connection
 
     missing: list[str] = []
-    # `crn` is the only field in the persisted schema that is structurally
-    # required; the token + instance live with the operator's BYOK store.
-    # For the validator stub, we only have `crn` to check — but the route
-    # contract is "all three required", and the UI will surface this back
-    # so the contract is documented even if the schema is permissive.
     if not ibm.crn.strip():
         missing.append("crn")
     if ibm.instance_name is None or not ibm.instance_name.strip():
         missing.append("instanceName")
-    if not (ibm.plan_tier or "").strip():
-        # Plan tier acts as the "instance" identifier for v1.
-        # Falsy plan_tier is acceptable for validation-purposes only when
-        # caller has supplied it via the PUT body just before validating.
-        # We don't fail on plan_tier here.
-        pass
-
     if missing:
         raise HTTPException(
             status_code=400,
@@ -89,6 +83,45 @@ async def validate_ibm_connection(
             ),
         )
 
+    # Live check when the operator has provided an api token.
+    if ibm.api_token.strip():
+        try:
+            # The qiskit-ibm-runtime call is synchronous — push to a worker
+            # thread so the asyncio loop isn't blocked by the network RTT.
+            import asyncio
+
+            from qiskit_ibm_runtime import QiskitRuntimeService
+
+            def _probe() -> str:
+                service = QiskitRuntimeService(
+                    channel="ibm_quantum_platform",
+                    token=ibm.api_token,
+                    instance=ibm.crn,
+                )
+                # Trigger the auth round-trip; least_busy is cheap and
+                # exercises the same auth path as the runner's job
+                # submission, so success here means the runner will work.
+                backend = service.least_busy(operational=True)
+                return str(backend.name)
+
+            backend_name = await asyncio.to_thread(_probe)
+            updated = settings.model_copy(
+                update={
+                    "ibm_connection": ibm.model_copy(
+                        update={"validated": True, "instance_name": backend_name},
+                    ),
+                }
+            )
+            return await store.put(DEFAULT_OWNER, updated)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"IBM Cloud authentication failed: {exc}",
+            ) from exc
+
+    # No api_token → field-only validation passes through.
     updated = settings.model_copy(
         update={
             "ibm_connection": ibm.model_copy(update={"validated": True}),

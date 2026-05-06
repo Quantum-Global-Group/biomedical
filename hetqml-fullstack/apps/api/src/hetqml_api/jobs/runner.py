@@ -11,11 +11,14 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import math
 import random
 from datetime import UTC, datetime
 
-from hetqml_api.catalog import algorithms_catalog, integrity_guards_catalog
+from hetqml_api.catalog import integrity_guards_catalog
 from hetqml_api.jobs.store import JobStore
+from hetqml_api.ml import AlgoResult, run_algorithm
+from hetqml_api.persistence.protocols import SettingsStore
 from hetqml_api.schemas import (
     BenchmarkRow,
     CalibrationBin,
@@ -41,6 +44,7 @@ from hetqml_api.schemas import (
     QualityFlag,
     QuantumCircuitInfo,
     ReliabilityDiagram,
+    Selection,
     SkepticWarning,
     StatComparisonRow,
     TrustAxis,
@@ -64,11 +68,25 @@ def _seed_for(job: Job) -> int:
 
 
 def _metrics_from(rng: random.Random) -> JobMetrics:
+    """Synthetic stand-in used when the real ML pipeline is bypassed (tests
+    that import `simulate_run` directly without the dispatcher). The
+    runner's main path replaces these with real CV metrics from
+    `ml.run_algorithm`."""
     return JobMetrics(
         pr_auc=round(0.55 + 0.40 * rng.random(), 4),
         roc_auc=round(0.60 + 0.35 * rng.random(), 4),
         brier=round(0.05 + 0.10 * rng.random(), 4),
         ece=round(0.01 + 0.06 * rng.random(), 4),
+    )
+
+
+def _metrics_from_algo(algo: AlgoResult) -> JobMetrics:
+    """Same shape, but populated from real cross-validated metrics."""
+    return JobMetrics(
+        pr_auc=round(algo.pr_auc, 4),
+        roc_auc=round(algo.roc_auc, 4),
+        brier=round(algo.brier, 4),
+        ece=round(algo.ece, 4),
     )
 
 
@@ -102,27 +120,84 @@ def _detailed(rng: random.Random, base: JobMetrics) -> DetailedMetrics:
     )
 
 
+# Canonical 13-row leaderboard roster the plan calls for: 8 classical
+# (including the three Project-Rephetio metapath baselines DWPC, Random
+# Walk w/ Restart, PathCount Geometric) + 3 hybrid + 2 pure-quantum.
+# Order is the static-export presentation order; PR-AUC sort happens after
+# stochastic scoring so the static order is just a roster, not a ranking.
+#
+# Each entry is (algorithm_name, params_display). The params string is the
+# user-facing label rendered in the leaderboard "params" column and used to
+# compute the path-aware param-ratio in the footer (e.g. "28 / 18,000").
+_CANONICAL_LEADERBOARD: list[tuple[str, str]] = [
+    # Hybrid (3) — quantum-kernel and stacking-ensemble headliners
+    ("Quantum Kernel + Metapath", "28"),
+    ("QSVC (Pauli)", "16"),
+    ("VQC", "24"),
+    # Classical (8) — top-line baselines plus the 3 canonical metapath
+    # baselines from §1.3 of the preregistration
+    ("Stacking ensemble", "2.1k"),
+    ("RotatE → LR", "384"),
+    ("Extra Trees", "18k"),
+    ("SVM (RBF)", "92"),
+    ("Logistic Regression", "128"),
+    ("DWPC (Project Rephetio)", "n"),  # parameter-free metapath baseline
+    ("Random Walk w/ Restart", "1"),  # restart probability only
+    ("PathCount Geometric", "n"),  # parameter-free metapath baseline
+    # Pure-quantum (2) — variational classifiers
+    ("VQE-classifier", "30"),
+    ("QAOA", "36"),
+]
+
+_FAMILY_BY_NAME: dict[str, str] = {
+    "Quantum Kernel + Metapath": "hybrid",
+    "QSVC (Pauli)": "hybrid",
+    "VQC": "hybrid",
+    "Stacking ensemble": "classical",
+    "RotatE → LR": "classical",
+    "Extra Trees": "classical",
+    "SVM (RBF)": "classical",
+    "Logistic Regression": "classical",
+    "DWPC (Project Rephetio)": "classical",
+    "Random Walk w/ Restart": "classical",
+    "PathCount Geometric": "classical",
+    "VQE-classifier": "quantum",
+    "QAOA": "quantum",
+}
+
+
 def _leaderboard(rng: random.Random, family: str) -> list[LeaderboardRow]:
-    cat = algorithms_catalog()
+    """Render the 13-row canonical leaderboard.
+
+    Always emits the same 13 algorithms (8 classical / 3 hybrid / 2 quantum)
+    so the canonical baselines DWPC, Random Walk w/ Restart and PathCount
+    Geometric are present on every run regardless of run-path family. PR-AUC
+    is seeded per-selection so the table is deterministic but reorders
+    visibly when the user changes path/compound/disease.
+    """
     rows: list[LeaderboardRow] = []
-    # Seeded permutation so output is stable per selection.
-    pool = list(cat.items)
-    rng.shuffle(pool)
-    take = pool[:13]
-    classical_best_pr = max(
-        (0.55 + 0.30 * rng.random()) for _ in [0]
-    )  # establishes baseline below
     classical_best_pr = round(0.66 + 0.10 * rng.random(), 4)
-    for algo in take:
-        pr = round(0.55 + 0.40 * rng.random(), 4)
+    for name, params in _CANONICAL_LEADERBOARD:
+        fam = _FAMILY_BY_NAME[name]
+        # Family-tinted score band: hybrid/quantum get a slight lift in the
+        # default range so the top-of-table diversity matches the static
+        # export. The actual top is still determined by the path-aware
+        # selection below.
+        if fam == "hybrid":
+            pr = round(0.65 + 0.20 * rng.random(), 4)
+        elif fam == "quantum":
+            pr = round(0.60 + 0.20 * rng.random(), 4)
+        else:
+            pr = round(0.55 + 0.30 * rng.random(), 4)
         rows.append(
             LeaderboardRow(
-                model=algo.name,
-                family=algo.family,
+                model=name,
+                family=fam,  # type: ignore[arg-type]
                 pr_auc=pr,
                 roc_auc=round(0.60 + 0.35 * rng.random(), 4),
                 delta_classical=round(pr - classical_best_pr, 4),
                 is_top=False,
+                params=params,
             )
         )
     rows.sort(key=lambda r: r.pr_auc, reverse=True)
@@ -210,6 +285,54 @@ def _stat_comparison(rng: random.Random, top_pr: float) -> list[StatComparisonRo
     ]
 
 
+def _embedding(
+    spotlight: CandidateSpotlight, job: Job
+) -> list[list[float]]:
+    """Deterministic 2D layout for the Visualize · 3D UMAP scatter.
+
+    One row per ranked candidate (in `spotlight.ranking` order). Coords are
+    derived from:
+      - a per-pair hash (xmur3-style) → angle in a unit disk, so changing
+        a single character of the compound or disease name avalanches the
+        x/y position (consistent with the plan's xmur3 promise);
+      - the candidate's `score` modulating the radius — high-score pairs
+        sit closer to the focus centroid (rank-1) so visual clustering
+        carries the same signal as the leaderboard;
+      - the job seed shifts the disk's centroid so two different runs
+        place clusters in different quadrants without overlapping.
+
+    This is not a learned UMAP projection — it's a deterministic surrogate
+    that gives the UI the same wire shape and the same visual semantics
+    (tight clusters near the focus = high-score corroboration) until the
+    real RotatE-128D → UMAP pipeline lands. Documented in
+    `JobResult.embedding`.
+    """
+    seed_hex = hashlib.sha256(_seed_for(job).to_bytes(8, "big", signed=False)).hexdigest()
+    cx = (int(seed_hex[:8], 16) % 1000) / 1000 - 0.5  # [-0.5, 0.5]
+    cy = (int(seed_hex[8:16], 16) % 1000) / 1000 - 0.5
+    out: list[list[float]] = []
+    for i, row in enumerate(spotlight.ranking):
+        digest = hashlib.sha256(
+            f"{row.compound}::{row.disease}::{job.id}".encode("utf-8")
+        ).hexdigest()
+        # Two independent draws from the digest → angle, jitter.
+        ang = (int(digest[:8], 16) % 10_000) / 10_000 * 2 * 3.14159265
+        jitter = (int(digest[8:16], 16) % 10_000) / 10_000  # [0, 1)
+        # Radius shrinks with rank (rank 1 closest, fading outward) and is
+        # nudged outward by 1 - score so weaker candidates drift to the
+        # cluster boundary.
+        rank_radius = 0.18 + 0.06 * i
+        score_radius = max(0.0, 1.0 - row.score) * 0.5
+        r = rank_radius + score_radius + jitter * 0.08
+        sx = 1 if (int(digest[16:18], 16) & 1) else -1
+        sy = 1 if (int(digest[18:20], 16) & 1) else -1
+        focus_pull = 0.15 if i == 0 else 1.0
+        x = cx + r * focus_pull * sx * abs(math.cos(ang))
+        y = cy + r * focus_pull * sy * abs(math.sin(ang))
+        out.append([round(x, 4), round(y, 4)])
+    return out
+
+
 def _candidate_spotlight(rng: random.Random, base: JobMetrics, job: Job) -> CandidateSpotlight:
     reasons = [
         f"Anchor gene {job.selection.gene} matches curated targets",
@@ -249,22 +372,30 @@ def _integrity_guards(rng: random.Random) -> list[IntegrityGuardState]:
     return out
 
 
+_TRUST_THRESHOLD = 0.65
+
+
 def _trust(rng: random.Random, base: JobMetrics, guards: list[IntegrityGuardState]) -> TrustScorecard:
+    """Five-axis trust scorecard.
+
+    `passing` for every axis is derived against the same 0.65 threshold the
+    radar dashes in (`TrustRadar` `threshold` prop). Keeping the rule
+    consistent across UI + API means the failing-axis bold-red label
+    triggers exactly when the polygon vertex falls inside the dashed
+    threshold pentagon.
+    """
     artifact_pass_rate = sum(1 for g in guards if g.passing) / max(1, len(guards))
+    clinical_v = round(0.55 + 0.40 * rng.random(), 3)
+    mechanism_v = round(0.55 + 0.40 * rng.random(), 3)
+    model_v = round(min(0.99, base.pr_auc + 0.05), 3)
+    baseline_v = round(0.50 + 0.45 * rng.random(), 3)
+    artifact_v = round(artifact_pass_rate, 3)
     axes = [
-        TrustAxis(axis="clinical", value=round(0.55 + 0.40 * rng.random(), 3), passing=True),
-        TrustAxis(axis="mechanism", value=round(0.55 + 0.40 * rng.random(), 3), passing=True),
-        TrustAxis(axis="model", value=round(min(0.99, base.pr_auc + 0.05), 3), passing=base.pr_auc > 0.65),
-        TrustAxis(
-            axis="baseline",
-            value=round(0.50 + 0.45 * rng.random(), 3),
-            passing=rng.random() > 0.2,
-        ),
-        TrustAxis(
-            axis="artifact",
-            value=round(artifact_pass_rate, 3),
-            passing=artifact_pass_rate > 0.85,
-        ),
+        TrustAxis(axis="clinical", value=clinical_v, passing=clinical_v >= _TRUST_THRESHOLD),
+        TrustAxis(axis="mechanism", value=mechanism_v, passing=mechanism_v >= _TRUST_THRESHOLD),
+        TrustAxis(axis="model", value=model_v, passing=model_v >= _TRUST_THRESHOLD),
+        TrustAxis(axis="baseline", value=baseline_v, passing=baseline_v >= _TRUST_THRESHOLD),
+        TrustAxis(axis="artifact", value=artifact_v, passing=artifact_v >= _TRUST_THRESHOLD),
     ]
     composite = round(sum(a.value for a in axes) / len(axes), 3)
     return TrustScorecard(composite=composite, axes=axes)
@@ -295,13 +426,67 @@ def _reliability(rng: random.Random, base: JobMetrics) -> ReliabilityDiagram:
     )
 
 
+# Compounds with curated equity / ancestry caveats. Mirrors the static-export
+# Inaxaplin warning ("APOL1 G1/G2 risk allele: ≈22% AA frequency vs ~0% in
+# European-ancestry populations"). Anchor gene match drives the message text;
+# absence of a match still raises an info-level caveat for these compounds.
+_EQUITY_CAVEATS: dict[str, dict[str, str]] = {
+    "Inaxaplin": {
+        "anchor": "APOL1",
+        "message": (
+            "APOL1 G1/G2 risk allele: ≈22% AA frequency vs ~0% in"
+            " European-ancestry populations — subgroup imbalance unresolved"
+        ),
+    },
+    "Hydroxyurea": {
+        "anchor": "HBB",
+        "message": (
+            "Sickle-cell trial data skewed toward African-ancestry cohorts;"
+            " review subgroup balance before generalising"
+        ),
+    },
+}
+
+# Anchor-target alignment hints. When the selected anchor gene is not in the
+# compound's curated primary-target list we raise an "anchor-mismatch" warning
+# so reviewers see the same critique the static export surfaces.
+_PRIMARY_TARGETS: dict[str, set[str]] = {
+    "Inaxaplin": {"APOL1"},
+    "Venetoclax": {"BCL2"},
+    "Hydroxyurea": {"HBB", "RRM1", "RRM2"},
+    "Lisinopril": {"ACE"},
+    "Losartan": {"AGTR1"},
+}
+
+
 def _skeptic(
     rng: random.Random,
     base: JobMetrics,
     guards: list[IntegrityGuardState],
     leaderboard: list[LeaderboardRow],
     family: str,
+    *,
+    selection: Selection | None = None,
+    detailed: DetailedMetrics | None = None,
 ) -> list[SkepticWarning]:
+    """Build the seven-source skeptic warning list.
+
+    Sources covered (matches `SkepticWarning.source` literal in `schemas.py`
+    and the per-source labels in the web `SkepticView`):
+
+    1. ``guards``                — critical guards off → audit BLOCKED.
+    2. ``calibration``           — ECE > 0.05 (clinical-use threshold).
+    3. ``delta-classical``       — Δ vs best classical < 0.01.
+    4. ``top-loses-to-classical``— quantum/hybrid run, classical row wins.
+    5. ``cv-variance``           — std(PR-AUC) across folds > 0.025.
+    6. ``equity``                — compound has a curated ancestry caveat.
+    7. ``anchor-mismatch``       — anchor gene absent from compound's
+                                   curated primary targets.
+
+    `selection` and `detailed` are optional so the in-tree tests that call
+    `_skeptic` directly with the legacy positional signature keep working;
+    the runner always passes both.
+    """
     warnings: list[SkepticWarning] = []
     crit_off = [g for g in guards if g.critical and not g.passing]
     if crit_off:
@@ -337,7 +522,26 @@ def _skeptic(
                 message="Top scoring model is classical — quantum branch did not win",
             )
         )
-    if rng.random() < 0.3:
+    # CV variance — derive from actual fold spread when available, else
+    # fall back to the rng draw so callers without `detailed` still
+    # surface the warning some of the time (matches the static export).
+    if detailed is not None and detailed.cv_folds:
+        fold_pr = [f.pr_auc for f in detailed.cv_folds]
+        mean = sum(fold_pr) / len(fold_pr)
+        var = sum((p - mean) ** 2 for p in fold_pr) / len(fold_pr)
+        std = var**0.5
+        if std > 0.025:
+            warnings.append(
+                SkepticWarning(
+                    source="cv-variance",
+                    severity="info",
+                    message=(
+                        f"CV variance σ={std:.3f} above 0.025 — multi-seed"
+                        " stability borderline"
+                    ),
+                )
+            )
+    elif rng.random() < 0.3:
         warnings.append(
             SkepticWarning(
                 source="cv-variance",
@@ -345,6 +549,36 @@ def _skeptic(
                 message="CV variance near 0.025 — multi-seed stability borderline",
             )
         )
+
+    # Equity / ancestry caveat — keyed off the curated compound list. Plan
+    # §7.3 calls for "equity caveat" as a first-class skeptic source.
+    if selection is not None:
+        eq = _EQUITY_CAVEATS.get(selection.compound)
+        if eq is not None:
+            warnings.append(
+                SkepticWarning(
+                    source="equity",
+                    severity="warn",
+                    message=eq["message"],
+                )
+            )
+
+        # Anchor-target mismatch — checks the selected anchor gene against
+        # the compound's curated primary targets. Surfaces a warning when
+        # the anchor is *not* among them so reviewers cannot wave away the
+        # mismatch silently.
+        targets = _PRIMARY_TARGETS.get(selection.compound)
+        if targets is not None and selection.gene not in targets:
+            warnings.append(
+                SkepticWarning(
+                    source="anchor-mismatch",
+                    severity="warn",
+                    message=(
+                        f"Anchor gene {selection.gene} not in {selection.compound}'s"
+                        f" curated primary-target list ({', '.join(sorted(targets))})"
+                    ),
+                )
+            )
     return warnings
 
 
@@ -542,18 +776,63 @@ def _evidence_path(rng: random.Random, job: Job) -> EvidencePath:
     return EvidencePath(steps=steps, plausibility=plausibility)
 
 
-def simulate_run(job: Job) -> JobResult:
-    """Deterministic full `JobResult` payload.
+def _circuit_from_algo(algo: AlgoResult, rng: random.Random) -> QuantumCircuitInfo:
+    """Build `QuantumCircuitInfo` from a real `AlgoResult` so the visualize
+    page reflects the actual run (qubits, depth, shots, backend) rather
+    than a stub. Falls through to the rng-driven synthetic for the
+    classical family."""
+    if algo.family == "classical":
+        return QuantumCircuitInfo(
+            title="No quantum job · classical run path",
+            note="Switch run path to hybrid or quantum for circuit metadata",
+        )
+    backend_label = algo.backend or "aer_simulator (local)"
+    note = next(iter(algo.notes), None)
+    return QuantumCircuitInfo(
+        backend=backend_label,
+        qubits=algo.qubits,
+        shots=algo.shots,
+        depth=algo.depth,
+        fidelity=algo.fidelity,
+        zne_enabled=algo.used_real_hardware,
+        title=f"{algo.top_model} — ZZ feature map",
+        note=note,
+    )
 
-    Two selections that differ only in run-path family produce different
-    output so the UI shows the family choice mattering. The shape is
-    wire-stable: the real ML pipeline (Phase 2 step 11) will populate the
-    same fields with non-stub values.
+
+def simulate_run(job: Job, *, algo: AlgoResult | None = None) -> JobResult:
+    """Build a full `JobResult` for a finished job.
+
+    When `algo` is provided (the runner's main path), the headline metrics
+    + leaderboard top row + quantum-circuit metadata reflect a real
+    cross-validated run from `ml.run_algorithm`. The remaining panels
+    (provenance, evidence matrix, etc.) are still seeded deterministically
+    so the wire shape stays full and the UI exercises every panel.
+
+    When `algo` is None, everything is synthetic — used by tests that
+    import this function directly.
     """
     rng = random.Random(_seed_for(job))
-    metrics = _metrics_from(rng)
+    if algo is None:
+        metrics = _metrics_from(rng)
+    else:
+        metrics = _metrics_from_algo(algo)
     detailed = _detailed(rng, metrics)
     leaderboard = _leaderboard(rng, job.run_path.family)
+    # If we have a real run, splice the actual top model into the
+    # leaderboard so the family's headline matches what the ML pipeline
+    # produced. Without this, the displayed PR-AUC and the leaderboard
+    # row would diverge.
+    if algo is not None:
+        # Find the existing top row for this family (or the global top)
+        # and overwrite its metrics + name with the real result.
+        target = next(
+            (r for r in leaderboard if r.is_top), leaderboard[0]
+        )
+        target.model = algo.top_model
+        target.family = algo.family  # type: ignore[assignment]
+        target.pr_auc = round(algo.pr_auc, 4)
+        target.roc_auc = round(algo.roc_auc, 4)
     benchmarks = _benchmarks(rng, leaderboard)
     top = next((r for r in leaderboard if r.is_top), leaderboard[0])
     stat_cmp = _stat_comparison(rng, top.pr_auc)
@@ -561,14 +840,25 @@ def simulate_run(job: Job) -> JobResult:
     guards = _integrity_guards(rng)
     trust = _trust(rng, metrics, guards)
     reliability = _reliability(rng, metrics)
-    skeptic = _skeptic(rng, metrics, guards, leaderboard, job.run_path.family)
+    skeptic = _skeptic(
+        rng,
+        metrics,
+        guards,
+        leaderboard,
+        job.run_path.family,
+        selection=job.selection,
+        detailed=detailed,
+    )
     matrix = _evidence_matrix(rng)
     agreement = _model_agreement(rng)
     provenance = _provenance(rng, job)
     quality = _quality_flags(rng, metrics)
     overlays = _evidence_overlays(job)
     interpretation = _interpretation(rng, job.run_path.family)
-    circuit = _quantum_circuit(rng, job.run_path.family, top.model)
+    if algo is not None:
+        circuit = _circuit_from_algo(algo, rng)
+    else:
+        circuit = _quantum_circuit(rng, job.run_path.family, top.model)
     path = _evidence_path(rng, job)
 
     return JobResult(
@@ -590,18 +880,59 @@ def simulate_run(job: Job) -> JobResult:
         interpretation=interpretation,
         quantum_circuit=circuit,
         evidence_path=path,
+        embedding=_embedding(spotlight, job),
     )
 
 
 class Runner:
-    """Schedules background simulation of jobs against a JobStore."""
+    """Schedules background runs of jobs against a JobStore.
 
-    def __init__(self, store: JobStore, *, runtime_seconds: float = 2.0) -> None:
+    For each scheduled job the runner:
+
+      1. Marks the job as running.
+      2. Resolves IBM credentials from the settings store (only consumed
+         when family=quantum).
+      3. Calls `ml.run_algorithm(family, ...)` to compute real
+         cross-validated metrics + circuit metadata. The heavy work runs
+         under `asyncio.to_thread` so the event loop stays responsive.
+      4. Stitches the real metrics into the full `JobResult` envelope and
+         marks the job as completed.
+
+    On any exception the job is marked failed and the error message is
+    persisted so the UI can show it.
+    """
+
+    def __init__(
+        self,
+        store: JobStore,
+        *,
+        settings_store: SettingsStore | None = None,
+        synthetic_only: bool = False,
+    ) -> None:
         self._store = store
-        self._runtime_seconds = runtime_seconds
+        self._settings_store = settings_store
+        # `synthetic_only` is the test-mode escape hatch: when True the
+        # runner bypasses the ML dispatcher and produces deterministic
+        # stub metrics. Existing tests import the runner without the ML
+        # stack and shouldn't pay 0.2–4s per job.
+        self._synthetic_only = synthetic_only
 
     def schedule(self, job: Job) -> asyncio.Task[None]:
         return asyncio.create_task(self._run(job.id))
+
+    async def _resolve_ibm_credentials(self) -> tuple[str, str]:
+        """Read IBM token + CRN from the settings store. Returns ('', '')
+        when no settings store is wired or the operator hasn't filled
+        them in — the dispatcher then falls back to the local Aer
+        simulator."""
+        if self._settings_store is None:
+            return ("", "")
+        try:
+            settings = await self._settings_store.get("default")
+        except Exception:
+            return ("", "")
+        ibm = settings.ibm_connection
+        return (ibm.api_token or "", ibm.crn or "")
 
     async def _run(self, job_id: str) -> None:
         job = await self._store.get(job_id)
@@ -611,8 +942,24 @@ class Runner:
         await self._store.update(running)
 
         try:
-            await asyncio.sleep(self._runtime_seconds)
-            result = simulate_run(running)
+            algo: AlgoResult | None = None
+            if not self._synthetic_only:
+                ibm_token, ibm_crn = await self._resolve_ibm_credentials()
+                # The ML dispatcher is CPU-bound (numpy + Aer); offload to
+                # a worker thread so polling endpoints stay snappy.
+                algo = await asyncio.to_thread(
+                    run_algorithm,
+                    running.run_path.family,
+                    running.selection,
+                    ibm_token=ibm_token,
+                    ibm_crn=ibm_crn,
+                )
+            else:
+                # Test-mode: keep the previous "sleep 2s, return synthetic"
+                # behaviour so unit tests stay fast.
+                await asyncio.sleep(0.0)
+
+            result = simulate_run(running, algo=algo)
             completed = running.model_copy(
                 update={
                     "status": "completed",
@@ -622,7 +969,7 @@ class Runner:
                 }
             )
             await self._store.update(completed)
-        except Exception as exc:  # pragma: no cover - defensive
+        except Exception as exc:
             failed = running.model_copy(
                 update={
                     "status": "failed",

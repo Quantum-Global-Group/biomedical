@@ -38,6 +38,10 @@ async def create_decision(
         trust_score=payload.trust_score,
         trust_axes=payload.trust_axes,
         guards_compromised=payload.guards_compromised,
+        integrity_guards=payload.integrity_guards,
+        job_id=payload.job_id,
+        cv_std=payload.cv_std,
+        evidence_sources=payload.evidence_sources,
         timestamp=datetime.now(UTC),
         note=payload.note,
     )
