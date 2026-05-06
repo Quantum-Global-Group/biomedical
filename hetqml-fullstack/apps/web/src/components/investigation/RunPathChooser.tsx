@@ -12,6 +12,15 @@ import {
   type CatalogGroup,
 } from "@/lib/data/algorithmCatalog";
 import { pickGeneralist } from "@/lib/data/catalogAdapter";
+import { isLiteMode } from "@/lib/liteMode";
+
+// Lite (HF Space) builds drop the advanced algorithm-catalog drill-down:
+// 25+ rows of algorithm metadata across hybrid/quantum/classical
+// families is research-console detail that doesn't earn its space in
+// the public demo, and pruning it tightens the Initialize page. The
+// flag is constant-folded at build time so the section disappears
+// from the lite trace cleanly.
+const IS_LITE = isLiteMode();
 
 interface Props {
   choice: RunPathChoice;
@@ -163,7 +172,9 @@ export function RunPathChooser({ choice, onChange, catalog }: Props) {
         })}
       </div>
 
-      <AlgorithmCatalog selectedFamily={activeFamily} catalog={catalog} />
+      {IS_LITE ? null : (
+        <AlgorithmCatalog selectedFamily={activeFamily} catalog={catalog} />
+      )}
 
       <div className="panel-footer">
         <span>

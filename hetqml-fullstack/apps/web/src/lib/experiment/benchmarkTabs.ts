@@ -81,7 +81,7 @@ export const BENCHMARK_TABS: readonly BenchmarkTab[] = [
     id: "cv-strategy",
     label: "CV strategy",
     summary:
-      "Cross-validation design, variance, and leakage controls behind each score.",
+      "5-fold stratified by treatment label with ancestry-aware time-split, plus LODO and LOCO leakage probes. Hard negatives drawn from co-treated diseases. 1,000 paired-bootstrap resamples for every CI.",
     columns: [
       ["folds", "Folds"],
       ["std", "Std"],
@@ -90,6 +90,30 @@ export const BENCHMARK_TABS: readonly BenchmarkTab[] = [
     ],
   },
 ];
+
+/** Cells where a lower numeric value is the better outcome — used by the
+ * Benchmark Suite's column-wise best/worst highlighting. Anything not in
+ * this set is treated as "higher is better". */
+export const LOWER_IS_BETTER: ReadonlySet<string> = new Set([
+  "brier",
+  "ece",
+  "mce",
+  "runtime",
+  "params",
+  "cost",
+  "cpuHours",
+  "depth",
+  "std",
+]);
+
+/** Cells whose value is a free-form label, not a number — these never
+ * receive best/worst highlighting. */
+export const NON_NUMERIC_CELLS: ReadonlySet<string> = new Set([
+  "backend",
+  "split",
+  "leakage",
+  "folds",
+]);
 
 export function getBenchmarkTab(id: string): BenchmarkTab {
   return BENCHMARK_TABS.find((tab) => tab.id === id) ?? BENCHMARK_TABS[0]!;

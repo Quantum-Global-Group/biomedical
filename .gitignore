@@ -14,6 +14,11 @@ out/
 dist/
 .turbo/
 coverage/
+# Generated static export for the HF Space lite deploy
+# (`pnpm --filter hetqml-web export:hf`). The hf_space/ directory itself
+# is tracked (README + space metadata); only the generated static/ inside
+# is ignored.
+hetqml-fullstack/apps/web/hf_space/static/
 
 # python
 __pycache__/
@@ -30,3 +35,6 @@ __pycache__/
 
 # logs
 *.log
+
+# Claude Code local config (per-machine launch.json, etc.)
+.claude/

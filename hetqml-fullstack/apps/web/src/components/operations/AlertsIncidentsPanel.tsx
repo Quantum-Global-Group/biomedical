@@ -7,9 +7,26 @@ interface Props {
   alerts: OpsAlertsResponse;
 }
 
-/** Active warnings + last-7d resolved log. Severity glyphs map to .warn /
- * .crit / .ok via the existing `.ops-alert-icon` styles. */
+const SUBHEAD: React.CSSProperties = {
+  fontSize: 10,
+  color: "var(--gold)",
+  textTransform: "uppercase",
+  letterSpacing: 1,
+  margin: "12px 0 6px",
+};
+
+/**
+ * Alerts & Incidents panel.
+ *
+ * Two explicit subsections: **Active** (unresolved warnings/criticals) and
+ * **Resolved (last 7d)**. The split mirrors the static export's `.active` /
+ * `.resolved` row modifiers, with eyebrow-style subheadings added so the
+ * grouping is unambiguous when many rows are present.
+ */
 export function AlertsIncidentsPanel({ alerts }: Props) {
+  const activeCount = alerts.active.length;
+  const resolvedCount = alerts.recentResolved.length;
+
   return (
     <section className="panel">
       <div className="panel-head">
@@ -23,26 +40,44 @@ export function AlertsIncidentsPanel({ alerts }: Props) {
         Active warnings (degraded services, calibration drift, budget burn).
         Resolved incidents from the last 7 days for trend awareness.
       </p>
+
+      <div style={SUBHEAD}>
+        Active <span style={{ color: "var(--faint)" }}>· {activeCount}</span>
+      </div>
       <div>
-        {alerts.active.length === 0 ? (
+        {activeCount === 0 ? (
           <p style={{ color: "var(--muted)", fontSize: 12 }}>
             No active alerts.
           </p>
         ) : (
           alerts.active.map((a, i) => <Row key={`a-${i}`} a={a} active />)
         )}
-        {alerts.recentResolved.map((a, i) => (
-          <Row key={`r-${i}`} a={a} active={false} />
-        ))}
       </div>
+
+      <div style={SUBHEAD}>
+        Resolved (last 7d){" "}
+        <span style={{ color: "var(--faint)" }}>· {resolvedCount}</span>
+      </div>
+      <div>
+        {resolvedCount === 0 ? (
+          <p style={{ color: "var(--muted)", fontSize: 12 }}>
+            No incidents resolved in the last 7 days.
+          </p>
+        ) : (
+          alerts.recentResolved.map((a, i) => (
+            <Row key={`r-${i}`} a={a} active={false} />
+          ))
+        )}
+      </div>
+
       <div className="panel-footer">
         <span>alerts/active.json</span>
         <span>
           <em>
             <strong style={{ color: "var(--amber)" }}>
-              {alerts.active.length} active
+              {activeCount} active
             </strong>{" "}
-            · {alerts.recentResolved.length} resolved (7d)
+            · {resolvedCount} resolved (7d)
           </em>
         </span>
       </div>

@@ -17,6 +17,13 @@ export interface LeaderboardFooter {
   classicalCount: number;
   hybridCount: number;
   quantumCount: number;
+  /** Pre-rendered "<top-params> / <classical-params>" string for the
+   * footer's PARAM RATIO tile (e.g. "28 / 18,000"). Falls back to "—"
+   * when either side has no parseable count. */
+  paramRatioLabel: string;
+  /** Path-aware deploy / advantage line shown beneath the footer grid;
+   * worded differently for classical / hybrid / quantum runs. */
+  deployCopy: string;
 }
 
 /** Path-aware top: prefer the highest PR-AUC row matching the active run-path
@@ -52,6 +59,7 @@ export function getLeaderboardFooter(
     topModel && bestClassical
       ? round4(topModel.prAuc - bestClassical.prAuc)
       : 0;
+  const heaviestClassical = heaviestByParams(rows.filter((r) => r.family === "classical"));
   return {
     topModel,
     bestClassical,
@@ -59,7 +67,67 @@ export function getLeaderboardFooter(
     classicalCount: rows.filter((r) => r.family === "classical").length,
     hybridCount: rows.filter((r) => r.family === "hybrid").length,
     quantumCount: rows.filter((r) => r.family === "quantum").length,
+    paramRatioLabel: paramRatioLabel(topModel, heaviestClassical),
+    deployCopy: deployCopy(topModel, deltaVsBestClassical, family),
   };
+}
+
+/** Parse a display-formatted param string ("28", "2.1k", "18k", "n") into
+ * a number for ratio math. Returns null when the string is parameter-free
+ * ("n", "—", undefined) or unparseable. */
+export function parseParamCount(value: string | undefined | null): number | null {
+  if (!value) return null;
+  const v = value.trim().toLowerCase();
+  if (v === "" || v === "n" || v === "—" || v === "-" || v === "np") return null;
+  const m = v.match(/^([0-9]*\.?[0-9]+)\s*([km]?)$/);
+  if (!m) return null;
+  const base = Number(m[1]);
+  if (!Number.isFinite(base)) return null;
+  const unit = m[2];
+  if (unit === "k") return Math.round(base * 1_000);
+  if (unit === "m") return Math.round(base * 1_000_000);
+  return Math.round(base);
+}
+
+function heaviestByParams(rows: readonly LeaderboardRow[]): LeaderboardRow | null {
+  let best: { row: LeaderboardRow; n: number } | null = null;
+  for (const r of rows) {
+    const n = parseParamCount(r.params);
+    if (n == null) continue;
+    if (!best || n > best.n) best = { row: r, n };
+  }
+  return best?.row ?? null;
+}
+
+function paramRatioLabel(
+  top: LeaderboardRow | null,
+  heaviestClassical: LeaderboardRow | null,
+): string {
+  const tp = parseParamCount(top?.params);
+  const cp = parseParamCount(heaviestClassical?.params);
+  if (tp == null || cp == null) return "—";
+  return `${tp.toLocaleString("en-US")} / ${cp.toLocaleString("en-US")}`;
+}
+
+/** Per-path footer prose under the leaderboard. Reads the static export's
+ * tone: classical runs reframe the top model as a deployable baseline,
+ * hybrid and quantum runs lean into the parameter-efficiency story. */
+function deployCopy(
+  top: LeaderboardRow | null,
+  delta: number,
+  family: RunFamilyId,
+): string {
+  if (!top) {
+    return "Pick a candidate on Initialize to populate the leaderboard.";
+  }
+  const sign = delta > 0 ? `+${delta.toFixed(3)}` : delta.toFixed(3);
+  if (family === "classical") {
+    return `Classical-only path: ${top.model} would deploy. Δ ${sign} PR-AUC vs the next-best classical — no quantum hardware involved on this run.`;
+  }
+  if (family === "quantum") {
+    return `Pure-quantum path: ${top.model} would deploy. Δ ${sign} vs best classical at a fraction of the parameter count — variance still wider than the hybrid leaders.`;
+  }
+  return `Hybrid path: ${top.model} would deploy. Δ ${sign} vs best classical with two-orders-of-magnitude fewer parameters — the headline parameter-efficiency result.`;
 }
 
 /** The Source-Check panel surfaces only critical guards. A `criticalCount`

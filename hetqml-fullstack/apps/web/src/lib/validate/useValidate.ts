@@ -13,6 +13,10 @@ import {
   type SkepticNote,
 } from "@/lib/api/client";
 import { useCatalogs } from "@/lib/data/useCatalogs";
+import {
+  applyToggleOverlay,
+  useIntegrityGuards,
+} from "@/lib/integrity/useIntegrityGuards";
 import { getLastJobId } from "@/lib/sessions/lastJob";
 import {
   clearCachedNote,
@@ -90,17 +94,44 @@ function ensureSessionId(): string {
   }
 }
 
-export function useValidate(): ValidateState {
+export interface UseValidateOptions {
+  /** jobId pre-resolved on the server (`?jobId=` in the URL). When set,
+   * the localStorage fallback is skipped. */
+  initialJobId?: string | null;
+  /** Job hydrated server-side. When provided, the first client fetch is
+   * skipped and the phase boots as "loading"/"ready" depending on status. */
+  initialJob?: Job | null;
+}
+
+export function useValidate(options: UseValidateOptions = {}): ValidateState {
+  const { initialJobId = null, initialJob = null } = options;
   const catalogs = useCatalogs();
+  // Subscribe to the global integrity-guard store so the decision payload's
+  // `guardsCompromised` and `integrityGuards` snapshot reflects the user's
+  // current Initialize toggles, not just what the server ran with.
+  const integrityGuardsLive = useIntegrityGuards();
 
   // --- Job resolution + polling -------------------------------------------
-  const [jobId, setJobId] = useState<string | null>(null);
-  const [job, setJob] = useState<Job | null>(null);
+  // Seed from server-hydrated values so SSR renders the right phase
+  // directly. localStorage fallback still runs client-side when the URL
+  // didn't carry a jobId.
+  const [jobId, setJobId] = useState<string | null>(initialJobId);
+  const [job, setJob] = useState<Job | null>(initialJob);
   const [jobError, setJobError] = useState<string | null>(null);
-  // Start in "no-job" so SSR renders the EmptyState, not a misleading
-  // "Loading job …" line. The first effect transitions to "loading" once
-  // it actually finds a jobId in the URL or localStorage.
-  const [phase, setPhase] = useState<ValidatePhase>("no-job");
+  // Initial phase derives from what we already have. If the server gave us
+  // a completed job, boot straight into "ready". If we have a jobId but
+  // no job, we'll be in "loading" until the first client fetch resolves.
+  // Otherwise default to "no-job" so SSR renders EmptyState.
+  const [phase, setPhase] = useState<ValidatePhase>(() => {
+    if (initialJob) {
+      if (initialJob.status === "queued" || initialJob.status === "running")
+        return "running";
+      if (initialJob.status === "failed") return "failed";
+      return "ready";
+    }
+    if (initialJobId) return "loading";
+    return "no-job";
+  });
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelled = useRef(false);
 
@@ -112,14 +143,14 @@ export function useValidate(): ValidateState {
   } | null>(null);
 
   useEffect(() => {
+    // Server already resolved the jobId from the URL — skip the
+    // localStorage fallback so we don't churn state.
+    if (initialJobId) return;
     if (typeof window === "undefined") return;
-    const url = new URL(window.location.href);
-    const fromUrl = url.searchParams.get("jobId");
-    const id = fromUrl ?? getLastJobId();
+    const id = getLastJobId();
     setJobId(id);
-    // Initial phase is "no-job"; flip to "loading" only when we actually
-    // resolved a jobId — keeps the EmptyState path the SSR default.
     if (id) setPhase("loading");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchJobOnce = useCallback(async (id: string) => {
@@ -139,7 +170,13 @@ export function useValidate(): ValidateState {
   useEffect(() => {
     if (!jobId) return;
     cancelled.current = false;
-    setPhase("loading");
+
+    // If the server already hydrated us with this exact job, skip the
+    // first fetch. Still arm the poll loop in case the job is in flight.
+    const skipFirstFetch = initialJob != null && initialJob.id === jobId;
+    if (!skipFirstFetch) {
+      setPhase("loading");
+    }
 
     const tick = async () => {
       const j = await fetchJobOnce(jobId);
@@ -157,13 +194,31 @@ export function useValidate(): ValidateState {
         setPhase("ready");
       }
     };
-    void tick();
+    // If the server already hydrated a terminal job (completed/failed),
+    // skip the redundant first fetch — the panels can render directly.
+    // For in-flight jobs we still tick so the user sees progress.
+    const initialIsTerminal =
+      skipFirstFetch &&
+      initialJob != null &&
+      initialJob.status !== "queued" &&
+      initialJob.status !== "running";
+    if (initialIsTerminal) {
+      // Set the phase to match the hydrated job and skip the poll loop.
+      if (initialJob!.status === "failed" || !initialJob!.result) {
+        setPhase("failed");
+      } else {
+        setPhase("ready");
+      }
+    } else {
+      void tick();
+    }
 
     return () => {
       cancelled.current = true;
       if (pollTimer.current) clearTimeout(pollTimer.current);
       pollTimer.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId, fetchJobOnce]);
 
   // --- Pair key derivation -----------------------------------------------
@@ -215,9 +270,42 @@ export function useValidate(): ValidateState {
       const topRow = result.leaderboard.find((r) => r.isTop);
       const topModel = topRow?.model ?? "—";
       const modelScore = topRow?.prAuc ?? result.metrics.prAuc;
-      const guardsCompromised = result.integrityGuards.filter(
+      // Overlay the JobResult guard snapshot with the user's live
+      // Initialize toggles so `guardsCompromised` reflects the cascade
+      // (item #8). Critical guards toggled off after the run shows up here
+      // as failing, which is what an audit log needs to record.
+      const overlaid = applyToggleOverlay(
+        integrityGuardsLive.catalog,
+        integrityGuardsLive.toggles,
+        result.integrityGuards,
+      );
+      const guardsCompromised = overlaid.filter(
         (g) => g.critical && !g.passing,
       ).length;
+
+      // Field-parity additions (per plan §3.4 decision_log contract):
+      // full integrity-guard snapshot, jobId, CV-fold std, and the
+      // evidence-source paths surfaced on Visualize. These ride in the
+      // existing JSON payload column so no SQLite migration is needed.
+      // Snapshot is the canonical 23-guard set (post-overlay) — older
+      // 5-guard subsets are no longer written.
+      const integrityGuards = overlaid.map((g) => ({
+        id: g.id,
+        label: g.label,
+        passing: g.passing,
+        critical: g.critical,
+      }));
+      const folds = result.detailedMetrics?.cvFolds ?? [];
+      let cvStd: number | undefined;
+      if (folds.length > 0) {
+        const mean = folds.reduce((s, f) => s + f.prAuc, 0) / folds.length;
+        const variance =
+          folds.reduce((s, f) => s + (f.prAuc - mean) ** 2, 0) / folds.length;
+        cvStd = Number(Math.sqrt(variance).toFixed(4));
+      }
+      const evidenceSources = (result.provenance ?? [])
+        .map((p) => p.source)
+        .filter((s): s is string => Boolean(s));
 
       const input: DecisionCreateInput = {
         pairKey,
@@ -239,6 +327,10 @@ export function useValidate(): ValidateState {
         trustScore: result.trustScorecard.composite,
         trustAxes,
         guardsCompromised,
+        integrityGuards,
+        jobId: job.id,
+        cvStd,
+        evidenceSources,
       };
 
       setDecisionPending(true);
@@ -252,7 +344,7 @@ export function useValidate(): ValidateState {
         setDecisionPending(false);
       }
     },
-    [job, pairKey, refreshDecisions],
+    [job, pairKey, refreshDecisions, integrityGuardsLive.catalog, integrityGuardsLive.toggles],
   );
 
   // --- Notes -------------------------------------------------------------

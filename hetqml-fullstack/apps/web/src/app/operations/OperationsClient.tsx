@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import { useOps } from "@/lib/operations/useOps";
+import { isLiteMode } from "@/lib/liteMode";
 import { AlertsIncidentsPanel } from "@/components/operations/AlertsIncidentsPanel";
 import { CostBudgetPanel } from "@/components/operations/CostBudgetPanel";
 import { DataSourcesPanel } from "@/components/operations/DataSourcesPanel";
 import { IbmWorkloadPanel } from "@/components/operations/IbmWorkloadPanel";
+import { JobHistoryPanel } from "@/components/operations/JobHistoryPanel";
 import { JobQueuePanel } from "@/components/operations/JobQueuePanel";
 import { MetricStrip } from "@/components/operations/MetricStrip";
 import { QuantumBackendsPanel } from "@/components/operations/QuantumBackendsPanel";
@@ -13,13 +15,19 @@ import { ResourceUtilizationPanel } from "@/components/operations/ResourceUtiliz
 import { StatusPill } from "@/components/operations/StatusPill";
 import { SystemHealthGrid } from "@/components/operations/SystemHealthGrid";
 
+const IS_LITE = isLiteMode();
+
 /** Operations page client.
  *
- * Mirrors the InitializeClient/ExperimentClient pattern:
- *   - panels are pure components
- *   - data is sourced from a hook (`useOps`) that polls every 5s and falls
- *     back to seed data while requests are in flight or failing
- *   - the hook returns a per-feed `source` flag for telemetry/footers
+ * Two layouts:
+ *   - Standalone (full): every panel — MetricStrip, SystemHealth,
+ *     IbmWorkload, QuantumBackends, ResourceUtilization, JobQueue,
+ *     JobHistory, CostBudget, DataSources, AlertsIncidents — driven
+ *     by `useOps()` polling /ops/* every 5s with seed fallback.
+ *   - Lite (HF Space, static export): focused 3-panel layout matching
+ *     the lite Settings page — top-level metrics, IBM workload, and
+ *     the active job queue. The other panels are operational depth
+ *     that doesn't earn its space in a public demo with seed data.
  */
 export function OperationsClient() {
   const ops = useOps();
@@ -33,65 +41,72 @@ export function OperationsClient() {
         <div>
           <div className="step">SYSTEM · OPERATIONS</div>
           <h1 className="h1">
-            Platform health, run history, and resource posture
+            {IS_LITE
+              ? "Quantum workload and active job queue"
+              : "Platform health, run history, and resource posture"}
           </h1>
           <p className="lede">
-            Operations is the systems-side view: are the quantum backends
-            healthy, are upstream data sources fresh, what jobs are running,
-            what&apos;s been spent. The Initialize → Visualize pipeline trusts
-            that everything here is green.
+            {IS_LITE
+              ? "The systems-side view of what's running. Top-level metrics, the IBM Quantum workload, and the active job queue."
+              : "Operations is the systems-side view: are the quantum backends healthy, are upstream data sources fresh, what jobs are running, what's been spent. The Initialize → Visualize pipeline trusts that everything here is green."}
           </p>
         </div>
         <StatusPill health={ops.health} />
       </div>
 
       <MetricStrip jobs={ops.jobs} cost={ops.cost} />
-      <SystemHealthGrid health={ops.health} />
       <IbmWorkloadPanel ibm={ops.ibm} />
-
-      <div className="grid-2">
-        <QuantumBackendsPanel backends={ops.backends} />
-        <ResourceUtilizationPanel resources={ops.resources} />
-      </div>
-
       <JobQueuePanel jobs={ops.jobs} />
 
-      <div className="grid-2">
-        <CostBudgetPanel cost={ops.cost} />
-        <DataSourcesPanel sources={ops.sources} />
-      </div>
+      {IS_LITE ? null : (
+        <>
+          <SystemHealthGrid health={ops.health} />
 
-      <AlertsIncidentsPanel alerts={ops.alerts} />
+          <div className="grid-2">
+            <QuantumBackendsPanel backends={ops.backends} />
+            <ResourceUtilizationPanel resources={ops.resources} />
+          </div>
 
-      {ops.error && someSeed ? (
+          <JobHistoryPanel jobs={ops.jobs} />
+
+          <div className="grid-2">
+            <CostBudgetPanel cost={ops.cost} />
+            <DataSourcesPanel sources={ops.sources} />
+          </div>
+
+          <AlertsIncidentsPanel alerts={ops.alerts} />
+        </>
+      )}
+
+      {IS_LITE ? null : ops.error && someSeed ? (
         <div className="skeptic-warning" style={{ marginTop: 14 }}>
           API offline — showing fallback seed data. ({ops.error})
         </div>
       ) : null}
 
-      <div className="how-to">
-        <div className="how-to-h">⊙ HOW TO READ THIS PAGE</div>
-        <div className="how-to-title">
-          What this view answers — and what to question
+      {IS_LITE ? null : (
+        <div className="how-to">
+          <div className="how-to-h">⊙ HOW TO READ THIS PAGE</div>
+          <div className="how-to-title">
+            What this view answers — and what to question
+          </div>
+          <p className="how-lede">
+            Operations is for platform engineers, not researchers. Read it
+            before kicking off a run. If anything here is amber or red, the
+            science pages will inherit fallback labels — interpret accordingly.
+          </p>
+          <p style={{ marginTop: 8, color: "var(--muted)", fontSize: 12 }}>
+            {allLive
+              ? "All eight feeds live."
+              : someSeed
+                ? "Some feeds are showing seed fallback."
+                : "Mixed sources — see footer."}
+            {ops.lastUpdated
+              ? ` · last refresh ${ops.lastUpdated.toLocaleTimeString()}`
+              : ""}
+          </p>
         </div>
-        <p className="how-lede">
-          Operations is for platform engineers, not researchers. Read it before
-          kicking off a run. If anything here is amber or red, the science
-          pages will inherit fallback labels — interpret accordingly.
-        </p>
-        <p
-          style={{ marginTop: 8, color: "var(--muted)", fontSize: 12 }}
-        >
-          {allLive
-            ? "All eight feeds live."
-            : someSeed
-              ? "Some feeds are showing seed fallback."
-              : "Mixed sources — see footer."}
-          {ops.lastUpdated
-            ? ` · last refresh ${ops.lastUpdated.toLocaleTimeString()}`
-            : ""}
-        </p>
-      </div>
+      )}
 
       <div className="footer-actions">
         <div style={{ display: "flex", gap: 8 }}>

@@ -23,8 +23,31 @@ describe("adapter helpers", () => {
         drugbankId: "DB1",
         therapeuticClass: "kinase-inhibitor",
         fdaApproved: true,
+        pubchemCid: 12345,
       }),
-    ).toEqual({ name: "X", drugbank: "DB1", category: "kinase-inhibitor" });
+    ).toEqual({
+      name: "X",
+      drugbank: "DB1",
+      category: "kinase-inhibitor",
+      pubchemCid: 12345,
+    });
+  });
+
+  it("normalizes a missing pubchem CID to null", () => {
+    expect(
+      adaptCompound({
+        name: "Y",
+        drugbankId: "DB2",
+        therapeuticClass: "metabolic",
+        fdaApproved: false,
+        pubchemCid: null,
+      }),
+    ).toEqual({
+      name: "Y",
+      drugbank: "DB2",
+      category: "metabolic",
+      pubchemCid: null,
+    });
   });
 
   it("prefixes ncbiId with NCBIGene: when missing", () => {

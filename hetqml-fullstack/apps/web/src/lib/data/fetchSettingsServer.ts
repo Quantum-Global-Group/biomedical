@@ -48,6 +48,7 @@ export const SETTINGS_FALLBACK: UserSettings = {
   },
   ibmConnection: {
     crn: "",
+    apiToken: "",
     validated: false,
     planTier: null,
     instanceName: null,

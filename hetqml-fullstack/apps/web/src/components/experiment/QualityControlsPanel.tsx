@@ -1,18 +1,28 @@
 "use client";
 
 import type { JobResult } from "@/lib/api/client";
+import {
+  applyToggleOverlay,
+  useIntegrityGuards,
+} from "@/lib/integrity/useIntegrityGuards";
 
 interface Props {
   result: JobResult;
 }
 
 /** Scientific quality controls — the QC grid surfaces every quality flag
- * from the result. Failing critical guards turn the audit footer red. */
+ * from the result. Failing critical guards turn the audit footer red.
+ *
+ * The "audit blocked" footer reads from the global integrity-guard store
+ * (see punch-list item #8) overlaid on the JobResult snapshot, so toggling
+ * a critical guard off on Initialize cascades here without a re-run. */
 export function QualityControlsPanel({ result }: Props) {
+  const { catalog, toggles } = useIntegrityGuards();
   const flags = result.qualityFlags;
   const passing = flags.filter((f) => f.state === "pass").length;
   const total = flags.length;
-  const failingCriticalGuards = result.integrityGuards.filter(
+  const overlaid = applyToggleOverlay(catalog, toggles, result.integrityGuards);
+  const failingCriticalGuards = overlaid.filter(
     (g) => g.critical && !g.passing,
   );
   const auditBlocked = failingCriticalGuards.length > 0;

@@ -1,10 +1,36 @@
 import { AppShell } from "@/components/shell/AppShell";
-import { fetchSettingsForServerComponent } from "@/lib/data/fetchSettingsServer";
+import { isLiteMode } from "@/lib/liteMode";
+import {
+  fetchSettingsForServerComponent,
+  SETTINGS_FALLBACK,
+} from "@/lib/data/fetchSettingsServer";
 import { SettingsClient } from "./SettingsClient";
 
-export const dynamic = "force-dynamic";
-
+// Settings renders in both build targets:
+//   - Standalone (full): server fetches /settings, hydrates the form.
+//   - Lite (HF Space, static export): no backend at build time, so we
+//     hand the SettingsClient the schema-default fallback. The client
+//     swaps its save/validate calls for localStorage-only persistence
+//     when isLiteMode() is true (see SettingsClient.tsx).
+//
+// Next 16 forbids expression-valued `dynamic` exports, so the lite branch
+// short-circuits before any `await fetch` — see settings docstring on
+// fetchSettingsServer.ts for the original rationale.
 export default async function SettingsPage() {
+  if (isLiteMode()) {
+    return (
+      <AppShell active="/settings">
+        <SettingsClient
+          initial={{
+            source: "fallback",
+            settings: SETTINGS_FALLBACK,
+            error: null,
+          }}
+        />
+      </AppShell>
+    );
+  }
+
   const initial = await fetchSettingsForServerComponent();
 
   return (

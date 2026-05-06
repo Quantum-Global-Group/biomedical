@@ -1,86 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
-
-type GuardLevel = "critical" | "recommended" | "optional";
-
-interface GuardDef {
-  id: string;
-  name: string;
-  level: GuardLevel;
-  description: string;
-  impact: string;
-  source: string;
-}
-
-interface GuardGroupDef {
-  id: string;
-  name: string;
-  guards: GuardDef[];
-}
-
-const GROUPS: GuardGroupDef[] = [
-  {
-    id: "bias",
-    name: "Bias / equity",
-    guards: [
-      {
-        id: "ancestry",
-        name: "Ancestry parity gate",
-        level: "critical",
-        description:
-          "Requires balanced representation checks before reporting effect sizes.",
-        impact: "Downstream calibration plots may read optimistic if disabled.",
-        source: "policy/equity-v1",
-      },
-      {
-        id: "label",
-        name: "Label leakage sweep",
-        level: "recommended",
-        description:
-          "Scans compound-disease pairs for temporal leakage in labels.",
-        impact: "May flag historically contaminated negatives.",
-        source: "feat/label-audit",
-      },
-    ],
-  },
-  {
-    id: "quantum",
-    name: "Quantum integrity",
-    guards: [
-      {
-        id: "shots",
-        name: "Shots accounting",
-        level: "critical",
-        description: "Persists IBM job ids + shot budgets per model call.",
-        impact: "Hardware claims become unauditable if turned off.",
-        source: "ibm/shots-v2",
-      },
-      {
-        id: "transpile",
-        name: "Transpile fidelity floor",
-        level: "optional",
-        description: "Blocks runs when transpile error exceeds threshold.",
-        impact: "May prevent marginal circuits from executing.",
-        source: "transpile/guard",
-      },
-    ],
-  },
-  {
-    id: "kg",
-    name: "KG provenance",
-    guards: [
-      {
-        id: "version",
-        name: "Hetionet version pin",
-        level: "critical",
-        description: "Freezes KG build id used for DWPC and embeddings.",
-        impact: "Reproducibility hash changes if disabled.",
-        source: "data/hetionet-v1.0",
-      },
-    ],
-  },
-];
+import { useEffect, useMemo, useState } from "react";
+import {
+  type GuardCatalogEntry,
+  type GuardLevel,
+  levelFor,
+} from "@/lib/integrity/guardCatalog";
+import { writeGuardState } from "@/lib/integrity/guardState";
+import { useIntegrityGuards } from "@/lib/integrity/useIntegrityGuards";
 
 function levelPill(level: GuardLevel) {
   return `guard-level-pill ${level}`;
@@ -88,28 +15,71 @@ function levelPill(level: GuardLevel) {
 
 type PostureFilter = "all" | "critical" | "recommended" | "optional" | "off";
 
-export function EvidencePosturePanel() {
-  const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
-    const e: Record<string, boolean> = {};
-    for (const g of GROUPS) e[g.id] = true;
-    return e;
-  });
-  const [on, setOn] = useState<Record<string, boolean>>(() => {
-    const m: Record<string, boolean> = {};
-    for (const g of GROUPS) {
-      for (const x of g.guards) {
-        m[x.id] = x.level !== "optional";
+interface EvidencePosturePanelProps {
+  /** Lite (HF Space) layout — keeps the summary stats and a flat list
+   * of just the critical guards (read-only), drops the filter row,
+   * group accordions, and the rest of the per-guard toggles. The full
+   * version stays the source of truth for integrity-guard state. */
+  lite?: boolean;
+}
+
+/**
+ * Initialize · Evidence posture — the source of truth for integrity-guard
+ * state. Every toggle persists to localStorage via `writeGuardState`, which
+ * cascades to Experiment QC + Validate trust through the
+ * `useIntegrityGuards()` hook (see punch-list item #8).
+ *
+ * Catalog comes from `/catalog/integrity-guards` when the API is up,
+ * otherwise the hardcoded fallback (same 23 guards / six groups, mirrored
+ * from `hetqml-pages/initialize/index.html`).
+ */
+export function EvidencePosturePanel({
+  lite = false,
+}: EvidencePosturePanelProps = {}) {
+  const { catalog, groups, toggles: liveToggles, loaded } = useIntegrityGuards();
+
+  // Local mirror so toggles update synchronously while the user clicks.
+  // Initial state honours whatever the hook handed us — defaults if there
+  // is no persisted state, persisted toggles otherwise.
+  const [on, setOn] = useState<Record<string, boolean>>(liveToggles);
+
+  // Re-sync local state when the catalog or remote toggles change (e.g.
+  // catalog upgrades from fallback to live, or another tab toggled).
+  useEffect(() => {
+    setOn((prev) => {
+      // Preserve in-flight unsynced edits but pick up new keys.
+      const next = { ...liveToggles };
+      for (const id of Object.keys(prev)) {
+        if (id in liveToggles) next[id] = prev[id]!;
       }
-    }
-    return m;
-  });
+      return next;
+    });
+    // Intentional: only react to liveToggles identity changes.
+  }, [liveToggles]);
+
+  // Persist + dispatch on every change so downstream pages cascade.
+  useEffect(() => {
+    writeGuardState(on);
+  }, [on]);
+
+  // Group expansion state — keyed by group name.
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    setExpanded((prev) => {
+      const next = { ...prev };
+      for (const g of groups) {
+        if (!(g.name in next)) next[g.name] = true;
+      }
+      return next;
+    });
+  }, [groups]);
+
   const [postureFilter, setPostureFilter] = useState<PostureFilter>("all");
 
   const stats = useMemo(() => {
-    const all = GROUPS.flatMap((g) => g.guards);
-    const total = all.length;
-    const enabled = all.filter((g) => on[g.id]).length;
-    const critical = all.filter((g) => g.level === "critical");
+    const total = catalog.length;
+    const enabled = catalog.filter((g) => on[g.id]).length;
+    const critical = catalog.filter((g) => g.critical);
     const critOn = critical.filter((g) => on[g.id]).length;
     const critOff = critical.length - critOn;
     return {
@@ -117,16 +87,18 @@ export function EvidencePosturePanel() {
       enabled,
       criticalOn: critOn,
       criticalOff: critOff,
+      criticalTotal: critical.length,
       passing: critOff === 0,
     };
-  }, [on]);
+  }, [catalog, on]);
 
-  const filterGuards = (g: GuardDef) => {
+  const filterGuards = (g: GuardCatalogEntry) => {
+    const level = levelFor(g);
     const isOn = on[g.id];
     if (postureFilter === "all") return true;
-    if (postureFilter === "critical") return g.level === "critical";
-    if (postureFilter === "recommended") return g.level === "recommended";
-    if (postureFilter === "optional") return g.level === "optional";
+    if (postureFilter === "critical") return level === "critical";
+    if (postureFilter === "recommended") return level === "recommended";
+    if (postureFilter === "optional") return level === "optional";
     if (postureFilter === "off") return !isOn;
     return true;
   };
@@ -138,7 +110,7 @@ export function EvidencePosturePanel() {
           <div className="eyebrow">TOOL · EVIDENCE POSTURE</div>
           <div className="panel-title">Integrity guards</div>
         </div>
-        <span className="badge">Reference</span>
+        <span className="badge">{loaded ? "Reference" : "Reference · seed"}</span>
       </div>
       <p className="panel-purpose">
         Every switch that governs an evidence claim downstream. State is
@@ -155,7 +127,7 @@ export function EvidencePosturePanel() {
         </div>
         <div className="posture-stat">
           <div className="posture-stat-num green">
-            {stats.criticalOn}/{GROUPS.flatMap((g) => g.guards).filter((x) => x.level === "critical").length}
+            {stats.criticalOn}/{stats.criticalTotal}
           </div>
           <div className="posture-stat-label">critical on</div>
         </div>
@@ -178,46 +150,144 @@ export function EvidencePosturePanel() {
         </div>
       </div>
 
-      <div className="posture-filter-row">
-        {(
-          [
-            "all",
-            "critical",
-            "recommended",
-            "optional",
-            "off",
-          ] as PostureFilter[]
-        ).map((p) => (
-          <span
-            key={p}
-            className={`posture-filter-pill${postureFilter === p ? " active" : ""}`}
-            role="button"
-            tabIndex={0}
-            onClick={() => setPostureFilter(p)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") setPostureFilter(p);
+      {lite ? (
+        // Flat read-only list of just the critical guards. Tight summary
+        // for the lite (HF Space) build — no filters, no accordions, no
+        // toggling. The full posture surface is in the standalone build.
+        <div style={{ marginTop: 12 }}>
+          <div
+            style={{
+              fontSize: 10,
+              letterSpacing: "0.12em",
+              color: "var(--muted)",
+              fontFamily: "var(--font-mono), monospace",
+              fontWeight: 700,
+              marginBottom: 6,
             }}
           >
-            {p}
-          </span>
-        ))}
-      </div>
+            CRITICAL GUARDS
+          </div>
+          <ul
+            style={{
+              listStyle: "none",
+              padding: 0,
+              margin: 0,
+              display: "grid",
+              gap: 6,
+            }}
+          >
+            {catalog
+              .filter((g) => g.critical)
+              .slice(0, 6)
+              .map((g) => {
+                const rowOn = on[g.id];
+                return (
+                  <li
+                    key={g.id}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "10px 1fr auto",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "6px 10px",
+                      background: rowOn
+                        ? "var(--green-bg)"
+                        : "var(--sienna-bg)",
+                      border: `1px solid ${rowOn ? "var(--green)" : "var(--sienna)"}`,
+                      borderRadius: 4,
+                    }}
+                  >
+                    <span
+                      aria-hidden
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: "50%",
+                        background: rowOn
+                          ? "var(--green)"
+                          : "var(--sienna)",
+                      }}
+                    />
+                    <span
+                      style={{
+                        fontSize: 12.5,
+                        color: "var(--ink)",
+                        fontWeight: 500,
+                      }}
+                    >
+                      {g.label}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontFamily: "var(--font-mono), monospace",
+                        color: rowOn ? "var(--green)" : "var(--sienna)",
+                        fontWeight: 700,
+                        letterSpacing: "0.06em",
+                      }}
+                    >
+                      {rowOn ? "ON" : "OFF"}
+                    </span>
+                  </li>
+                );
+              })}
+          </ul>
+          <div
+            style={{
+              marginTop: 8,
+              fontSize: 11,
+              color: "var(--faint)",
+            }}
+          >
+            Full posture surface ({stats.total} guards across{" "}
+            {groups.length} groups, with per-guard toggles and audit-blocking
+            criticality) lives in the standalone build.
+          </div>
+        </div>
+      ) : null}
 
-      {GROUPS.map((group) => (
+      {lite ? null : (
+        <div className="posture-filter-row">
+          {(
+            [
+              "all",
+              "critical",
+              "recommended",
+              "optional",
+              "off",
+            ] as PostureFilter[]
+          ).map((p) => (
+            <span
+              key={p}
+              className={`posture-filter-pill${postureFilter === p ? " active" : ""}`}
+              role="button"
+              tabIndex={0}
+              onClick={() => setPostureFilter(p)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") setPostureFilter(p);
+              }}
+            >
+              {p}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {lite ? null : groups.map((group) => (
         <div
-          key={group.id}
-          className={`guard-group${expanded[group.id] ? " expanded" : ""}`}
+          key={group.name}
+          className={`guard-group${expanded[group.name] ? " expanded" : ""}`}
         >
           <div
             className="guard-group-head"
             role="button"
             tabIndex={0}
             onClick={() =>
-              setExpanded((s) => ({ ...s, [group.id]: !s[group.id] }))
+              setExpanded((s) => ({ ...s, [group.name]: !s[group.name] }))
             }
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ")
-                setExpanded((s) => ({ ...s, [group.id]: !s[group.id] }));
+                setExpanded((s) => ({ ...s, [group.name]: !s[group.name] }));
             }}
           >
             <div className="guard-group-name">
@@ -236,13 +306,14 @@ export function EvidencePosturePanel() {
           <div className="guard-group-body">
             {group.guards.filter(filterGuards).map((g) => {
               const rowOn = on[g.id];
-              const rowClass = `guard-row${rowOn ? " on" : " off"}${g.level === "critical" && !rowOn ? " off-critical" : ""}`;
+              const level = levelFor(g);
+              const rowClass = `guard-row${rowOn ? " on" : " off"}${level === "critical" && !rowOn ? " off-critical" : ""}`;
               return (
                 <div key={g.id} className={rowClass}>
                   <button
                     type="button"
                     className="guard-toggle"
-                    aria-label={`toggle ${g.name}`}
+                    aria-label={`toggle ${g.label}`}
                     onClick={(e) => {
                       e.stopPropagation();
                       setOn((m) => ({ ...m, [g.id]: !m[g.id] }));
@@ -250,13 +321,19 @@ export function EvidencePosturePanel() {
                   />
                   <div className="guard-content">
                     <div className="guard-name-row">
-                      <span className="guard-name">{g.name}</span>
-                      <span className={levelPill(g.level)}>{g.level}</span>
+                      <span className="guard-name">{g.label}</span>
+                      <span className={levelPill(level)}>{level}</span>
                     </div>
                     <div className="guard-desc">{g.description}</div>
-                    <div className="guard-impact">{g.impact}</div>
+                    <div className="guard-impact">
+                      {g.critical
+                        ? "Failing critical guards halt the audit pipeline."
+                        : g.defaultOn
+                          ? "Recommended guards surface a warning when off."
+                          : "Optional — informational; off does not gate audit."}
+                    </div>
                   </div>
-                  <span className="guard-source">{g.source}</span>
+                  <span className="guard-source">config/integrity.yaml</span>
                   <span className={`guard-status-text${rowOn ? " on" : " off"}`}>
                     {rowOn ? "on" : "off"}
                   </span>

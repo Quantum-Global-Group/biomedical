@@ -21,11 +21,15 @@ import { HetionetStatsBadge } from "@/components/initialize/HetionetStatsBadge";
 import { MiniKgPreview } from "@/components/initialize/MiniKgPreview";
 import { SessionPanel } from "@/components/initialize/SessionPanel";
 import { useCatalogs } from "@/lib/data/useCatalogs";
+import { HETIONET_TOTALS } from "@/lib/data/hetionetTotals";
 import type { InitialCatalogs } from "@/lib/data/fetchCatalogsServer";
 import { getJob, startInvestigation, type Job } from "@/lib/api/client";
 import type { StoredSession } from "@/lib/sessions/storage";
 import { setLastJobId } from "@/lib/sessions/lastJob";
 import { useVisiblePoll } from "@/lib/polling/useVisiblePoll";
+import { isLiteMode } from "@/lib/liteMode";
+
+const IS_LITE = isLiteMode();
 
 const POLL_BASE_MS = 1000;
 const POLL_MAX_MS = 8000;
@@ -161,6 +165,7 @@ export function InitializeClient({
               value={selection.disease}
               selection={selection}
               onChange={(v) => updateField("disease", v)}
+              totalInHetionet={HETIONET_TOTALS.diseases}
             />
             <ParameterCombobox
               field="compound"
@@ -171,6 +176,7 @@ export function InitializeClient({
               value={selection.compound}
               selection={selection}
               onChange={(v) => updateField("compound", v)}
+              totalInHetionet={HETIONET_TOTALS.compounds}
             />
             <ParameterCombobox
               field="gene"
@@ -181,6 +187,7 @@ export function InitializeClient({
               value={selection.gene}
               selection={selection}
               onChange={(v) => updateField("gene", v)}
+              totalInHetionet={HETIONET_TOTALS.genes}
             />
             <ParameterCombobox
               field="metaedge"
@@ -191,6 +198,7 @@ export function InitializeClient({
               value={selection.metaedge}
               selection={selection}
               onChange={(v) => updateField("metaedge", v)}
+              totalInHetionet={HETIONET_TOTALS.metaedges}
             />
           </div>
           <HetionetStatsBadge state={catalogs} />
@@ -213,7 +221,7 @@ export function InitializeClient({
       </div>
 
       <div className="grid-7-5">
-        <EvidencePosturePanel />
+        <EvidencePosturePanel lite={IS_LITE} />
         <SessionPanel
           selection={selection}
           runPath={runPath}
@@ -224,25 +232,48 @@ export function InitializeClient({
       <section className="panel">
         <div className="panel-head">
           <div>
-            <div className="eyebrow">RUN · FASTAPI</div>
-            <div className="panel-title">Execute investigation job</div>
+            <div className="eyebrow">
+              {IS_LITE ? "RUN · DEMO" : "RUN · FASTAPI"}
+            </div>
+            <div className="panel-title">
+              {IS_LITE ? "Walk to Experiment" : "Execute investigation job"}
+            </div>
           </div>
-          <span className="badge">API</span>
+          <span className="badge">{IS_LITE ? "Demo" : "API"}</span>
         </div>
         <p className="panel-purpose">
-          Posts to <code>/investigations/run</code> on the FastAPI service and
-          polls <code>/jobs/&lt;id&gt;</code> until the job completes.
+          {IS_LITE ? (
+            <>
+              This static demo doesn&apos;t run real jobs — there&apos;s no
+              FastAPI behind it. The full version posts your selections to{" "}
+              <code>/investigations/run</code> and polls{" "}
+              <code>/jobs/&lt;id&gt;</code> until completion. To see what
+              an experiment readout looks like, jump straight to the{" "}
+              <strong>Experiment</strong> page.
+            </>
+          ) : (
+            <>
+              Posts to <code>/investigations/run</code> on the FastAPI service
+              and polls <code>/jobs/&lt;id&gt;</code> until the job completes.
+            </>
+          )}
         </p>
         <div className="footer-actions" style={{ marginTop: 0, paddingTop: 0, border: "none" }}>
           <div />
-          <button
-            type="button"
-            className="btn-primary"
-            disabled={!allFilled || submitting}
-            onClick={handleRun}
-          >
-            {submitting ? "Submitting…" : "Run investigation"}
-          </button>
+          {IS_LITE ? (
+            <Link className="btn-primary" href="/experiment">
+              Open demo experiment →
+            </Link>
+          ) : (
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={!allFilled || submitting}
+              onClick={handleRun}
+            >
+              {submitting ? "Submitting…" : "Run investigation"}
+            </button>
+          )}
         </div>
         {error ? (
           <div className="skeptic-warning" style={{ marginTop: 14 }}>
@@ -252,7 +283,7 @@ export function InitializeClient({
         {job ? <JobView job={job} /> : null}
       </section>
 
-      <div className="how-to">
+      {IS_LITE ? null : <div className="how-to">
         <div className="how-to-h">⊙ HOW TO READ THIS PAGE</div>
         <div className="how-to-title">What this view answers — and what to question</div>
         <p className="how-lede">
@@ -290,7 +321,7 @@ export function InitializeClient({
             <div className="how-quick-stat-label">tools on page</div>
           </div>
         </div>
-      </div>
+      </div>}
 
       <div className="footer-actions">
         <div style={{ display: "flex", gap: 8 }}>

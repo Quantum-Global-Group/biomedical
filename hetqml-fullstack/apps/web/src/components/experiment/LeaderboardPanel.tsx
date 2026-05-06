@@ -63,7 +63,9 @@ export function LeaderboardPanel({ result, family }: Props) {
                 />
               </div>
               <div className="leader-score">{r.prAuc.toFixed(3)}</div>
-              <div className="leader-params">{r.family.slice(0, 1).toUpperCase()}</div>
+              <div className="leader-params">
+                {r.params && r.params.trim() !== "" ? `${r.params}p` : "—"}
+              </div>
               <div className="leader-status">
                 <span
                   style={{
@@ -117,7 +119,7 @@ export function LeaderboardPanel({ result, family }: Props) {
         <div>
           <div className="metric-label">PARAM RATIO</div>
           <div style={{ fontSize: 14, fontFamily: "monospace" }}>
-            {footer.topModel?.family ?? "—"} / classical
+            {footer.paramRatioLabel}
           </div>
         </div>
         <div>
@@ -128,6 +130,16 @@ export function LeaderboardPanel({ result, family }: Props) {
           </div>
         </div>
       </div>
+      <p
+        style={{
+          marginTop: 12,
+          fontSize: 12,
+          lineHeight: 1.55,
+          color: "var(--muted)",
+        }}
+      >
+        {footer.deployCopy}
+      </p>
       <div className="panel-footer">
         <span>leaderboard · {rows.length} algorithms</span>
         <span>

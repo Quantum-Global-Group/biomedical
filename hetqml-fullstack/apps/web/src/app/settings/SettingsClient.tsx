@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   type ApiKeysSettings,
@@ -13,10 +13,65 @@ import {
   type ProfileSettings,
   type QuantumSettings,
   type UserSettings,
-  saveSettings,
-  validateIbmConnection,
+  saveSettings as saveSettingsRemote,
+  validateIbmConnection as validateIbmConnectionRemote,
 } from "@/lib/api/client";
 import type { InitialSettings } from "@/lib/data/fetchSettingsServer";
+import { DEFAULT_SETTINGS } from "@/lib/settings/defaults";
+import { isLiteMode } from "@/lib/liteMode";
+
+const IS_LITE = isLiteMode();
+const LITE_LOCALSTORAGE_KEY = "hetqml.liteSettings";
+
+/** localStorage-backed save used by the lite (HF Space) build. The
+ * static export has no `/settings` endpoint to PUT to, so changes are
+ * persisted to the browser only. The promise still resolves with the
+ * round-tripped draft so the UI's saved-status flow stays the same. */
+async function saveSettingsLite(draft: UserSettings): Promise<UserSettings> {
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(
+        LITE_LOCALSTORAGE_KEY,
+        JSON.stringify(draft),
+      );
+    } catch {
+      /* quota / private-mode — ignore, the in-memory draft still applies */
+    }
+  }
+  return draft;
+}
+
+/** Lite stub for validateIbmConnection — there's no FastAPI to call
+ * IBM Quantum from, but we mark the connection as validated locally so
+ * the form's "validated" pill flips on. Persisted to localStorage too. */
+async function validateIbmConnectionLite(
+  draft: UserSettings,
+): Promise<UserSettings> {
+  const updated: UserSettings = {
+    ...draft,
+    ibmConnection: {
+      ...draft.ibmConnection,
+      validated: true,
+      planTier: draft.ibmConnection.planTier ?? "demo",
+      instanceName:
+        draft.ibmConnection.instanceName ?? "hetqml-lite (demo)",
+    },
+  };
+  return saveSettingsLite(updated);
+}
+
+const saveSettings: (draft: UserSettings) => Promise<UserSettings> = IS_LITE
+  ? saveSettingsLite
+  : saveSettingsRemote;
+
+// The remote validateIbmConnection takes no arguments — the FastAPI route
+// reads the persisted draft from the database. Wrap it to share the
+// `(draft) => Promise<UserSettings>` signature with the lite shim so call
+// sites don't need to know which build target they are in.
+const validateIbmConnection: (draft: UserSettings) => Promise<UserSettings> =
+  IS_LITE
+    ? validateIbmConnectionLite
+    : (_draft: UserSettings) => validateIbmConnectionRemote();
 
 /* ---------- Helpers --------------------------------------------------- */
 
@@ -59,6 +114,70 @@ function defaultRunPathBlurb(p: PipelineSettings): string {
     case "quantum":
       return "Pure quantum HW · ~7m";
   }
+}
+
+/* ---------- Settings JSON validator ----------------------------------- */
+
+/**
+ * Recursively validates an unknown payload against the DEFAULT_SETTINGS
+ * shape. Returns either the parsed UserSettings or an error string
+ * describing the first mismatch found. Used by the Import action to refuse
+ * malformed JSON instead of silently overwriting the live document.
+ *
+ * The check is structural: every key present in DEFAULT_SETTINGS must
+ * appear in the payload with a value whose primitive type matches.
+ * `null` is allowed wherever the default is `null` (apiKeys fields,
+ * IBM planTier / instanceName).
+ */
+function validateUserSettings(payload: unknown): UserSettings | { error: string } {
+  if (typeof payload !== "object" || payload === null) {
+    return { error: "expected a JSON object at the top level" };
+  }
+  const out: Record<string, unknown> = {};
+  for (const [groupKey, groupDefault] of Object.entries(
+    DEFAULT_SETTINGS as unknown as Record<string, Record<string, unknown>>,
+  )) {
+    const groupVal = (payload as Record<string, unknown>)[groupKey];
+    if (typeof groupVal !== "object" || groupVal === null) {
+      return { error: `missing or invalid section "${groupKey}"` };
+    }
+    const groupOut: Record<string, unknown> = {};
+    for (const [fieldKey, defaultFieldVal] of Object.entries(groupDefault)) {
+      const incoming = (groupVal as Record<string, unknown>)[fieldKey];
+      if (incoming === undefined) {
+        return {
+          error: `missing field "${groupKey}.${fieldKey}"`,
+        };
+      }
+      // null is acceptable iff the default is null
+      if (incoming === null) {
+        if (defaultFieldVal === null) {
+          groupOut[fieldKey] = null;
+          continue;
+        }
+        return {
+          error: `field "${groupKey}.${fieldKey}" cannot be null`,
+        };
+      }
+      // Primitive type match against the default. Where the default is
+      // null, accept whatever string / number primitive the payload offers
+      // — those are the BYOK / IBM optional-string fields.
+      const expected = defaultFieldVal === null ? typeof incoming : typeof defaultFieldVal;
+      if (typeof incoming !== expected) {
+        return {
+          error: `field "${groupKey}.${fieldKey}" expected ${expected}, got ${typeof incoming}`,
+        };
+      }
+      groupOut[fieldKey] = incoming;
+    }
+    out[groupKey] = groupOut;
+  }
+  return out as unknown as UserSettings;
+}
+
+function timestampForFilename(): string {
+  // 2026-05-05T14-32-08 — filesystem-safe, sortable.
+  return new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 }
 
 /* ---------- Tiny presentational helpers ------------------------------- */
@@ -166,6 +285,25 @@ export function SettingsClient({ initial }: { initial: InitialSettings }) {
   const [status, setStatus] = useState<SaveStatus>({ kind: "idle" });
   const [validating, setValidating] = useState(false);
   const [validateError, setValidateError] = useState<string | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importNotice, setImportNotice] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Lite (HF Space): rehydrate from localStorage so a refresh preserves
+  // the user's edits. Runs once after mount; if the stored payload is
+  // invalid we silently keep the schema-default `initial` instead.
+  useEffect(() => {
+    if (!IS_LITE || typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(LITE_LOCALSTORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as UserSettings;
+      setBase(parsed);
+      setDraft(parsed);
+    } catch {
+      /* malformed payload — stick with defaults */
+    }
+  }, []);
 
   const dirty = useMemo(() => !eq(base, draft), [base, draft]);
 
@@ -221,7 +359,7 @@ export function SettingsClient({ initial }: { initial: InitialSettings }) {
         setBase(target);
         setDraft(target);
       }
-      const updated = await validateIbmConnection();
+      const updated = await validateIbmConnection(target);
       setBase(updated);
       setDraft(updated);
       setStatus({ kind: "saved", at: new Date() });
@@ -231,6 +369,98 @@ export function SettingsClient({ initial }: { initial: InitialSettings }) {
       setValidating(false);
     }
   }, [base, draft]);
+
+  /* ---------- Export · Import · Reset ----- */
+
+  // Snapshot the *current draft* (what the user sees) so a partially-edited
+  // form can still be exported. Filename includes a sortable timestamp.
+  const onExportSettings = useCallback(() => {
+    try {
+      const json = JSON.stringify(draft, null, 2);
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `hetqml-settings-${timestampForFilename()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      // Defer revoke so Safari has time to start the download.
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setImportError(null);
+      setImportNotice("exported current draft");
+      window.setTimeout(() => setImportNotice(null), 2500);
+    } catch (e) {
+      setImportError(
+        `export failed — ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }, [draft]);
+
+  // Stage the import into `draft` (does NOT auto-save). The user can then
+  // review the imported values and click Save changes to commit, matching
+  // the existing dirty-tracking flow.
+  const onImportFileSelected = useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      // Reset the input value so picking the same file twice still fires
+      // onChange.
+      event.target.value = "";
+      if (!file) return;
+      setImportError(null);
+      setImportNotice(null);
+      try {
+        const text = await file.text();
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(text);
+        } catch (e) {
+          setImportError(
+            `invalid JSON — ${e instanceof Error ? e.message : String(e)}`,
+          );
+          return;
+        }
+        const result = validateUserSettings(parsed);
+        if ("error" in result) {
+          setImportError(`schema mismatch — ${result.error}`);
+          return;
+        }
+        setDraft(result);
+        setStatus({ kind: "idle" });
+        setImportNotice(
+          `imported "${file.name}" — review the form, then Save changes`,
+        );
+        window.setTimeout(() => setImportNotice(null), 4000);
+      } catch (e) {
+        setImportError(
+          `import failed — ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    },
+    [],
+  );
+
+  const onTriggerImport = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  // Stages defaults into `draft`. User must Save to commit, which keeps
+  // server-side decisions / sessions / notes untouched (those live in
+  // separate tables and are not part of UserSettings).
+  const onResetToDefaults = useCallback(() => {
+    const ok = window.confirm(
+      "Reset all settings to defaults?\n\n" +
+        "This stages the default values into the form. Your existing " +
+        "decisions, sessions, and skeptic notes are not touched. Click " +
+        "Save changes to commit.",
+    );
+    if (!ok) return;
+    setDraft(DEFAULT_SETTINGS);
+    setStatus({ kind: "idle" });
+    setImportError(null);
+    setImportNotice("reset to defaults — review and Save to commit");
+    window.setTimeout(() => setImportNotice(null), 4000);
+  }, []);
 
   /* ---------- Status pill text ----- */
   const pillText =
@@ -275,9 +505,13 @@ export function SettingsClient({ initial }: { initial: InitialSettings }) {
           <div className="step">SYSTEM · SETTINGS</div>
           <h1 className="h1">Personalize the dashboard and platform defaults</h1>
           <p className="lede">
-            Settings persist server-side and apply to every investigation, run,
-            and export. Edit any field and click <strong>Save changes</strong>{" "}
-            to commit. The IBM connection panel has a dedicated validator.
+            {IS_LITE
+              ? "Three sections of the full settings surface — your reviewer profile, pipeline defaults, and IBM Quantum credentials. Changes save to your browser only (this static demo has no backend); the full version persists every field server-side."
+              : "Settings persist server-side and apply to every investigation, run, and export. Edit any field and click "}
+            {IS_LITE ? null : <strong>Save changes</strong>}
+            {IS_LITE
+              ? null
+              : " to commit. The IBM connection panel has a dedicated validator."}
           </p>
         </div>
         <span className={pillClass}>{pillText}</span>
@@ -332,74 +566,109 @@ export function SettingsClient({ initial }: { initial: InitialSettings }) {
         </div>
       ) : null}
 
-      {/* Profile + Appearance */}
-      <div className="grid-2">
-        <ProfilePanel
-          value={draft.profile}
-          onChange={(patch) => update("profile", patch)}
-          dirty={dirtyKeys.has("profile")}
-        />
-        <AppearancePanel
-          value={draft.appearance}
-          onChange={(patch) => update("appearance", patch)}
-          dirty={dirtyKeys.has("appearance")}
-        />
-      </div>
+      {IS_LITE ? (
+        // Lite (HF Space) layout — keep only the three panels that are
+        // meaningful without a backend: identity (Profile), pipeline
+        // defaults, and the IBM Quantum BYOK fields. The rest
+        // (Appearance, Quantum, Notifications, Privacy, the secondary
+        // API Keys, Keyboard Shortcuts, About) are server-bound or
+        // operationally meaningless in a static demo and would just
+        // pad the page.
+        <>
+          <ProfilePanel
+            value={draft.profile}
+            onChange={(patch) => update("profile", patch)}
+            dirty={dirtyKeys.has("profile")}
+          />
+          <PipelinePanel
+            value={draft.pipeline}
+            onChange={(patch) => update("pipeline", patch)}
+            dirty={dirtyKeys.has("pipeline")}
+          />
+          <IbmConnectionPanel
+            value={draft.ibmConnection}
+            onChange={(patch) => update("ibmConnection", patch)}
+            dirty={dirtyKeys.has("ibmConnection")}
+            validating={validating}
+            onValidate={onValidateIbm}
+            validateError={validateError}
+            badgeLabel={ibmBadgeLabel}
+            badgeColor={ibmBadgeColor}
+            lite
+          />
+        </>
+      ) : (
+        <>
+          {/* Profile + Appearance */}
+          <div className="grid-2">
+            <ProfilePanel
+              value={draft.profile}
+              onChange={(patch) => update("profile", patch)}
+              dirty={dirtyKeys.has("profile")}
+            />
+            <AppearancePanel
+              value={draft.appearance}
+              onChange={(patch) => update("appearance", patch)}
+              dirty={dirtyKeys.has("appearance")}
+            />
+          </div>
 
-      {/* Pipeline + Quantum */}
-      <div className="grid-2">
-        <PipelinePanel
-          value={draft.pipeline}
-          onChange={(patch) => update("pipeline", patch)}
-          dirty={dirtyKeys.has("pipeline")}
-        />
-        <QuantumPanel
-          value={draft.quantum}
-          onChange={(patch) => update("quantum", patch)}
-          dirty={dirtyKeys.has("quantum")}
-        />
-      </div>
+          {/* Pipeline + Quantum */}
+          <div className="grid-2">
+            <PipelinePanel
+              value={draft.pipeline}
+              onChange={(patch) => update("pipeline", patch)}
+              dirty={dirtyKeys.has("pipeline")}
+            />
+            <QuantumPanel
+              value={draft.quantum}
+              onChange={(patch) => update("quantum", patch)}
+              dirty={dirtyKeys.has("quantum")}
+            />
+          </div>
 
-      {/* Notifications + Privacy */}
-      <div className="grid-2">
-        <NotificationsPanel
-          value={draft.notifications}
-          onChange={(patch) => update("notifications", patch)}
-          dirty={dirtyKeys.has("notifications")}
-        />
-        <PrivacyPanel
-          value={draft.privacy}
-          onChange={(patch) => update("privacy", patch)}
-          dirty={dirtyKeys.has("privacy")}
-        />
-      </div>
+          {/* Notifications + Privacy */}
+          <div className="grid-2">
+            <NotificationsPanel
+              value={draft.notifications}
+              onChange={(patch) => update("notifications", patch)}
+              dirty={dirtyKeys.has("notifications")}
+            />
+            <PrivacyPanel
+              value={draft.privacy}
+              onChange={(patch) => update("privacy", patch)}
+              dirty={dirtyKeys.has("privacy")}
+            />
+          </div>
 
-      {/* IBM Quantum connection */}
-      <IbmConnectionPanel
-        value={draft.ibmConnection}
-        onChange={(patch) => update("ibmConnection", patch)}
-        dirty={dirtyKeys.has("ibmConnection")}
-        validating={validating}
-        onValidate={onValidateIbm}
-        validateError={validateError}
-        badgeLabel={ibmBadgeLabel}
-        badgeColor={ibmBadgeColor}
-      />
+          {/* IBM Quantum connection */}
+          <IbmConnectionPanel
+            value={draft.ibmConnection}
+            onChange={(patch) => update("ibmConnection", patch)}
+            dirty={dirtyKeys.has("ibmConnection")}
+            validating={validating}
+            onValidate={onValidateIbm}
+            validateError={validateError}
+            badgeLabel={ibmBadgeLabel}
+            badgeColor={ibmBadgeColor}
+          />
 
-      {/* API Keys */}
-      <ApiKeysPanel
-        value={draft.apiKeys}
-        onChange={(patch) => update("apiKeys", patch)}
-        dirty={dirtyKeys.has("apiKeys")}
-      />
+          {/* API Keys */}
+          <ApiKeysPanel
+            value={draft.apiKeys}
+            onChange={(patch) => update("apiKeys", patch)}
+            dirty={dirtyKeys.has("apiKeys")}
+          />
 
-      {/* Reference panels (static, no API) */}
-      <div className="grid-2">
-        <KeyboardShortcutsPanel />
-        <AboutPanel />
-      </div>
+          {/* Reference panels (static, no API) */}
+          <div className="grid-2">
+            <KeyboardShortcutsPanel />
+            <AboutPanel />
+          </div>
+        </>
+      )}
 
-      <div className="how-to">
+      {IS_LITE ? null : <div className="how-to">
         <div className="how-to-h">⊙ HOW TO READ THIS PAGE</div>
         <div className="how-to-title">
           What this view answers — and what to question
@@ -554,10 +823,40 @@ export function SettingsClient({ initial }: { initial: InitialSettings }) {
             </div>
           </div>
         </div>
-      </div>
+      </div>}
+
+      {importError ? (
+        <div
+          className="skeptic-warning"
+          role="alert"
+          style={{ marginTop: 14, borderColor: "var(--sienna)" }}
+        >
+          Import: {importError}
+        </div>
+      ) : null}
+
+      {importNotice ? (
+        <div
+          className="skeptic-warning"
+          style={{
+            marginTop: 14,
+            borderColor: "var(--green)",
+            color: "var(--green)",
+          }}
+        >
+          {importNotice}
+        </div>
+      ) : null}
 
       <div className="footer-actions">
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
           <button
             type="button"
             className="btn"
@@ -581,6 +880,49 @@ export function SettingsClient({ initial }: { initial: InitialSettings }) {
                 ? `synced · ${fmtTime(status.at)}`
                 : "all changes saved"}
           </span>
+          <span
+            aria-hidden="true"
+            style={{
+              width: 1,
+              height: 20,
+              background: "var(--faint)",
+              opacity: 0.3,
+              margin: "0 4px",
+            }}
+          />
+          <button
+            type="button"
+            className="btn"
+            onClick={onExportSettings}
+            title="Download current form as JSON"
+          >
+            ↓ Export settings
+          </button>
+          <button
+            type="button"
+            className="btn"
+            onClick={onTriggerImport}
+            title="Load settings from a JSON file (validates before applying)"
+          >
+            ↑ Import settings
+          </button>
+          <button
+            type="button"
+            className="btn"
+            onClick={onResetToDefaults}
+            title="Stage factory defaults into the form (preserves decisions / sessions / notes)"
+          >
+            ↺ Reset to defaults
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json,.json"
+            onChange={onImportFileSelected}
+            style={{ display: "none" }}
+            aria-hidden="true"
+            tabIndex={-1}
+          />
         </div>
         <Link href="/initialize" className="btn-primary">
           Back to Initialize →
@@ -1174,6 +1516,7 @@ function IbmConnectionPanel({
   validateError,
   badgeLabel,
   badgeColor,
+  lite,
 }: {
   value: IbmConnectionSettings;
   onChange: (patch: Partial<IbmConnectionSettings>) => void;
@@ -1183,27 +1526,18 @@ function IbmConnectionPanel({
   validateError: string | null;
   badgeLabel: string;
   badgeColor: string;
+  /** Lite layout — hide the instance-name / plan-tier rows, leaving
+   * just API token + CRN + the validate action. The full version
+   * keeps all four for operational diligence. */
+  lite?: boolean;
 }) {
-  // BYOK API token — held in component state only, never sent to dashboard
-  // backend. Persisted only in the browser session.
-  const [token, setToken] = useState<string>(() => {
-    if (typeof window === "undefined") return "";
-    try {
-      return window.sessionStorage.getItem("hetqml.ibm.token") ?? "";
-    } catch {
-      return "";
-    }
-  });
-
-  const updateToken = (next: string) => {
-    setToken(next);
-    try {
-      if (next) window.sessionStorage.setItem("hetqml.ibm.token", next);
-      else window.sessionStorage.removeItem("hetqml.ibm.token");
-    } catch {
-      /* no-op */
-    }
-  };
+  // BYOK IBM Quantum API token. Persisted to the backend (sqlite settings
+  // table) so the job runner can read it when family=quantum and submit
+  // to IBM hardware. Reflected back through the normal `ibmConnection`
+  // panel value so dirty-tracking + Save changes work the same as every
+  // other field.
+  const token = value.apiToken;
+  const updateToken = (next: string) => onChange({ apiToken: next });
 
   return (
     <div className="panel">
@@ -1216,11 +1550,10 @@ function IbmConnectionPanel({
       />
       <p className="panel-purpose">
         Connect your IBM Quantum Platform account. The <strong>API token</strong>{" "}
-        authenticates you (kept in browser session storage, never sent to the
-        dashboard backend); the <strong>CRN</strong> identifies the IBM Cloud
-        quantum-instance to bill / route jobs through. Both required to view
-        workload on the Operations page or to submit jobs from the Hybrid /
-        Quantum HW run paths.
+        + <strong>CRN</strong> identify and bill the IBM Cloud quantum-instance.
+        {lite
+          ? " In this static demo, both fields save to your browser only — there's no backend to submit real-hardware jobs from. Plug them in to feel the flow; nothing leaves the page."
+          : " Both are persisted server-side in the dashboard sqlite store so the job runner can submit real-hardware jobs when you pick the Quantum run path. Empty token → runner falls back to the local Aer simulator."}
       </p>
       <div className="settings-form" style={{ marginTop: 8 }}>
         <div className="settings-row">
@@ -1243,30 +1576,36 @@ function IbmConnectionPanel({
             onChange={(e) => onChange({ crn: e.target.value })}
           />
         </div>
-        <div className="settings-row">
-          <div className="settings-label">Instance name</div>
-          <input
-            className="settings-input"
-            type="text"
-            placeholder="hub/group/project or instance display name"
-            autoComplete="off"
-            value={value.instanceName ?? ""}
-            onChange={(e) =>
-              onChange({ instanceName: e.target.value || null })
-            }
-          />
-        </div>
-        <div className="settings-row">
-          <div className="settings-label">Plan tier</div>
-          <input
-            className="settings-input"
-            type="text"
-            placeholder="open · standard · premium"
-            autoComplete="off"
-            value={value.planTier ?? ""}
-            onChange={(e) => onChange({ planTier: e.target.value || null })}
-          />
-        </div>
+        {lite ? null : (
+          <>
+            <div className="settings-row">
+              <div className="settings-label">Instance name</div>
+              <input
+                className="settings-input"
+                type="text"
+                placeholder="hub/group/project or instance display name"
+                autoComplete="off"
+                value={value.instanceName ?? ""}
+                onChange={(e) =>
+                  onChange({ instanceName: e.target.value || null })
+                }
+              />
+            </div>
+            <div className="settings-row">
+              <div className="settings-label">Plan tier</div>
+              <input
+                className="settings-input"
+                type="text"
+                placeholder="open · standard · premium"
+                autoComplete="off"
+                value={value.planTier ?? ""}
+                onChange={(e) =>
+                  onChange({ planTier: e.target.value || null })
+                }
+              />
+            </div>
+          </>
+        )}
         <div className="settings-row">
           <div className="settings-label">Connection</div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -1299,9 +1638,13 @@ function IbmConnectionPanel({
         </div>
       </div>
       <div className="panel-footer">
-        <span>ibm_quantum · server (token in sessionStorage)</span>
+        <span>{lite ? "ibm_quantum · browser-only (demo)" : "ibm_quantum · sqlite-persisted"}</span>
         <span>
-          <em>credentials never transmitted to dashboard backend</em>
+          <em>
+            {lite
+              ? "fields save to localStorage; no calls leave this page"
+              : "token + CRN read by runner when family=quantum"}
+          </em>
         </span>
       </div>
     </div>

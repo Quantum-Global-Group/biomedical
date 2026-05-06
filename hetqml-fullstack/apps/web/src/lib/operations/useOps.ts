@@ -29,8 +29,11 @@ import {
   SEED_RESOURCES,
   SEED_SOURCES,
 } from "./seed";
+import { isLiteMode } from "@/lib/liteMode";
 
 const POLL_INTERVAL_MS = 5_000;
+// Build-time-folded so the lite branch DCEs the polling effect entirely.
+const IS_LITE = isLiteMode();
 
 type OpsSource = "seed" | "live";
 
@@ -94,7 +97,18 @@ export function useOps(intervalMs: number = POLL_INTERVAL_MS): OpsState {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const cancelled = useRef(false);
 
+  // Lite (HF Space) build — no backend to poll. Mark loaded so the
+  // page shows the seed fixtures as the canonical view; the per-feed
+  // `source` flags stay "seed" so the panel footers read "demo data"
+  // and the page banner can branch on isLiteMode().
   useEffect(() => {
+    if (!IS_LITE) return;
+    setLoaded(true);
+    setLastUpdated(new Date());
+  }, []);
+
+  useEffect(() => {
+    if (IS_LITE) return;
     cancelled.current = false;
 
     const tick = async () => {

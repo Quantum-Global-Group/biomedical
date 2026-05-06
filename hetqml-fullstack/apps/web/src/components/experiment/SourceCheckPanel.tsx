@@ -2,6 +2,10 @@
 
 import type { Job } from "@/lib/api/client";
 import { scopeGuards } from "@/lib/experiment/selectors";
+import {
+  applyToggleOverlay,
+  useIntegrityGuards,
+} from "@/lib/integrity/useIntegrityGuards";
 
 interface Props {
   job: Job;
@@ -9,11 +13,13 @@ interface Props {
 
 /** Provenance-style source check. Adapts to run-path family — quantum/hybrid
  * surface the IBM backend, classical falls back to CPU. The fourth card
- * surfaces the integrity-guards subset relevant for this run. */
+ * surfaces the integrity-guards subset relevant for this run, overlaid with
+ * the user's Initialize toggles (item #8 cascade). */
 export function SourceCheckPanel({ job }: Props) {
   const result = job.result;
   const family = job.runPath.family;
   const isQuantumPath = family !== "classical";
+  const { catalog, toggles } = useIntegrityGuards();
 
   const jobShortId = job.id.slice(0, 8);
   const startedAt = new Date(job.createdAt);
@@ -21,7 +27,10 @@ export function SourceCheckPanel({ job }: Props) {
     startedAt.getUTCMinutes(),
   )} UTC`;
 
-  const guards = result ? scopeGuards(result.integrityGuards) : null;
+  const overlaid = result
+    ? applyToggleOverlay(catalog, toggles, result.integrityGuards)
+    : null;
+  const guards = overlaid ? scopeGuards(overlaid) : null;
   const guardsLabel = guards
     ? guards.failingCritical.length === 0
       ? "all green"

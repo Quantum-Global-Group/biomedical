@@ -1,11 +1,87 @@
 "use client";
 
-import { useState } from "react";
-import type { JobResult, StatComparisonRow } from "@/lib/api/client";
+import type { CSSProperties } from "react";
+import { useMemo, useState } from "react";
+import type { BenchmarkRow, JobResult, StatComparisonRow } from "@/lib/api/client";
 import {
   BENCHMARK_TABS,
+  LOWER_IS_BETTER,
+  NON_NUMERIC_CELLS,
   getBenchmarkTab,
 } from "@/lib/experiment/benchmarkTabs";
+
+/** Parse a benchmark cell's display string into a comparable number.
+ * Handles the formatted units used by `_benchmarks` on the API side:
+ *   - plain decimals ("0.827", "+0.037", "-0.024")
+ *   - thousands ("16,432", "2.1k", "18k")
+ *   - dollar amounts ("$2.14")
+ *   - mm:ss runtimes ("4m 12s", "49s")
+ *   - percentages ("0.94" — interpreted as plain decimal)
+ * Returns `null` for non-numeric / sentinel values ("—", "not used"). */
+function parseCell(raw: string | undefined): number | null {
+  if (!raw) return null;
+  const v = raw.trim();
+  if (v === "" || v === "—" || v === "-" || v === "not used" || v === "n/a") {
+    return null;
+  }
+  // Runtime: "Xm YYs" or "YYs"
+  const mm = v.match(/^(?:(\d+)m\s+)?(\d+)s$/);
+  if (mm) {
+    const minutes = mm[1] ? Number(mm[1]) : 0;
+    const seconds = Number(mm[2]);
+    return minutes * 60 + seconds;
+  }
+  // Strip leading $/+/- and trailing % then handle k/m suffixes.
+  const cleaned = v.replace(/[$,]/g, "").replace(/^\+/, "");
+  const km = cleaned.match(/^(-?[0-9]*\.?[0-9]+)\s*([km])?$/i);
+  if (km) {
+    const base = Number(km[1]);
+    if (!Number.isFinite(base)) return null;
+    const unit = km[2]?.toLowerCase();
+    if (unit === "k") return base * 1_000;
+    if (unit === "m") return base * 1_000_000;
+    return base;
+  }
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Compute, per column, the cell index of the best and worst row so the
+ * table can paint them gold (best) / sienna-dim (worst). Only numeric
+ * columns participate; ties are broken by first-occurrence. */
+function computeColumnExtrema(
+  rows: readonly BenchmarkRow[],
+  columns: readonly (readonly [string, string])[],
+): Map<string, { best: number; worst: number }> {
+  const out = new Map<string, { best: number; worst: number }>();
+  for (const [key] of columns) {
+    if (NON_NUMERIC_CELLS.has(key)) continue;
+    const lowerBetter = LOWER_IS_BETTER.has(key);
+    let bestIdx = -1;
+    let worstIdx = -1;
+    let bestVal = lowerBetter ? Infinity : -Infinity;
+    let worstVal = lowerBetter ? -Infinity : Infinity;
+    let numericCount = 0;
+    rows.forEach((row, i) => {
+      const n = parseCell(row.cells[key]);
+      if (n == null) return;
+      numericCount += 1;
+      if (lowerBetter ? n < bestVal : n > bestVal) {
+        bestVal = n;
+        bestIdx = i;
+      }
+      if (lowerBetter ? n > worstVal : n < worstVal) {
+        worstVal = n;
+        worstIdx = i;
+      }
+    });
+    // Don't highlight a single-row column — best == worst is misleading.
+    if (numericCount >= 2) {
+      out.set(key, { best: bestIdx, worst: worstIdx });
+    }
+  }
+  return out;
+}
 
 interface Props {
   result: JobResult;
@@ -21,6 +97,12 @@ export function BenchmarkSuitePanel({ result }: Props) {
   const isQuantumDisabled =
     tab.id === "quantum-hw" &&
     rows.every((r) => r.family === "Classical");
+  // Column-wise best/worst is computed once per (rows × tab) pair so the
+  // O(rows × cols) scan doesn't repeat on every cell render.
+  const extrema = useMemo(
+    () => computeColumnExtrema(rows, tab.columns),
+    [rows, tab.columns],
+  );
 
   return (
     <section className="panel">
@@ -98,9 +180,37 @@ export function BenchmarkSuitePanel({ result }: Props) {
                       <strong>{row.model}</strong>
                       <span>{row.family}</span>
                     </td>
-                    {tab.columns.map(([key]) => (
-                      <td key={key}>{row.cells[key] ?? "—"}</td>
-                    ))}
+                    {tab.columns.map(([key]) => {
+                      const ext = extrema.get(key);
+                      const isBest = ext?.best === i;
+                      const isWorst = ext?.worst === i;
+                      const cellStyle: CSSProperties | undefined = isBest
+                        ? {
+                            color: "var(--gold)",
+                            fontWeight: 600,
+                          }
+                        : isWorst
+                          ? {
+                              color: "var(--sienna)",
+                              opacity: 0.75,
+                            }
+                          : undefined;
+                      return (
+                        <td
+                          key={key}
+                          style={cellStyle}
+                          title={
+                            isBest
+                              ? "best in column"
+                              : isWorst
+                                ? "worst in column"
+                                : undefined
+                          }
+                        >
+                          {row.cells[key] ?? "—"}
+                        </td>
+                      );
+                    })}
                     <td>
                       <span
                         className={`benchmark-status ${

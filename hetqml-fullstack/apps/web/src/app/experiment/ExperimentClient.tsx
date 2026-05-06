@@ -20,39 +20,57 @@ import { CandidateSpotlightPanel } from "@/components/experiment/CandidateSpotli
 import { QualityControlsPanel } from "@/components/experiment/QualityControlsPanel";
 import { BenchmarkSuitePanel } from "@/components/experiment/BenchmarkSuitePanel";
 import { useVisiblePoll } from "@/lib/polling/useVisiblePoll";
+import { isLiteMode } from "@/lib/liteMode";
+import type { LeaderboardRow } from "@/lib/api/client";
+
+// Constant-folded so the lite-only branch DCEs out of the full build
+// and the heavy demo path (poll → CompletedView) DCEs out of the lite
+// trace when this resolves to true.
+const IS_LITE = isLiteMode();
 
 const POLL_BASE_MS = 1500;
 const POLL_MAX_MS = 12_000;
 
-export function ExperimentClient() {
+interface ExperimentClientProps {
+  /** jobId resolved from `?jobId=` on the server. localStorage fallback
+   * still happens client-side when this is null. */
+  jobIdFromUrl?: string | null;
+  /** Job hydrated server-side when `jobIdFromUrl` was set. May be null if
+   * the API was offline or the id was unknown — client will refetch. */
+  initialJob?: Job | null;
+}
+
+export function ExperimentClient({
+  jobIdFromUrl = null,
+  initialJob = null,
+}: ExperimentClientProps = {}) {
+  // All hooks run unconditionally before any early return — Rules-of-Hooks.
+  // The headline-mode short-circuit happens after, so a mid-run mode flip
+  // can't change the hook count between renders.
   const { mode, hydrated } = useDashboardMode();
-  const [jobId, setJobId] = useState<string | null>(null);
-  const [job, setJob] = useState<Job | null>(null);
+  const [jobId, setJobId] = useState<string | null>(jobIdFromUrl);
+  const [job, setJob] = useState<Job | null>(initialJob);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Loading is true only when we have a jobId but no hydrated job yet —
+  // i.e. the server fetch failed and we need a client retry.
+  const [loading, setLoading] = useState(
+    jobIdFromUrl != null && initialJob == null,
+  );
 
-  // Headline mode is decoupled from any specific candidate / jobId — it
-  // shows the project's preregistered methodology panel. Wait for the
-  // mode to hydrate from localStorage before deciding so we don't flash
-  // the demo flow first.
-  if (hydrated && mode === "headline") {
-    return <HeadlineExperimentView />;
-  }
-
-  // Resolve job id from URL ?jobId=, then localStorage fallback. Runs once
-  // on mount; the polling effect picks up the resolved id.
+  // localStorage fallback only runs if the URL didn't carry a jobId.
   useEffect(() => {
+    if (jobIdFromUrl) return;
     if (typeof window === "undefined") return;
-    const url = new URL(window.location.href);
-    const fromUrl = url.searchParams.get("jobId");
-    const id = fromUrl ?? getLastJobId();
+    const id = getLastJobId();
     setJobId(id);
     if (!id) setLoading(false);
-  }, []);
+  }, [jobIdFromUrl]);
 
-  // First fetch — runs once per resolved jobId. Sets initial loading=false.
+  // First fetch — runs when we have a jobId but no hydrated job (server
+  // fetch missed) or when localStorage resolved a fresh id post-hydration.
   useEffect(() => {
     if (!jobId) return;
+    if (job?.id === jobId) return; // already hydrated
     let cancelled = false;
     setLoading(true);
     (async () => {
@@ -71,7 +89,7 @@ export function ExperimentClient() {
     return () => {
       cancelled = true;
     };
-  }, [jobId]);
+  }, [jobId, job?.id]);
 
   // Subsequent ticks — only while the job is still in flight.
   const pollableId =
@@ -91,6 +109,24 @@ export function ExperimentClient() {
     isDone: (j) => j.status !== "queued" && j.status !== "running",
     isProgress: (prev, next) => !prev || prev.status !== next.status,
   });
+
+  // Headline mode is decoupled from any specific candidate / jobId — it
+  // shows the project's preregistered methodology panel. Wait for the
+  // mode to hydrate from localStorage before deciding so we don't flash
+  // the demo flow first. NOTE: this branch must run after all hooks above.
+  if (hydrated && mode === "headline") {
+    return <HeadlineExperimentView />;
+  }
+
+  // Lite (HF Space) demo: there's no FastAPI to run jobs, so the
+  // demo-mode flow can never reach a CompletedView. Show a focused
+  // 3-element view (page-hero + leaderboard + detailed metrics)
+  // mirroring the lite Visualize / Validate / Operations / Settings
+  // pattern, with mock fixtures from the Inaxaplin → APOL1-MKD
+  // walkthrough.
+  if (IS_LITE && hydrated) {
+    return <ExperimentLiteView />;
+  }
 
   if (!jobId) {
     return <EmptyState />;
@@ -183,6 +219,25 @@ function CompletedView({ job }: { job: Job }) {
         selectedCompound={job.selection.compound}
       />
       <QualityControlsPanel result={result} />
+
+      <div className="how-to">
+        <div className="how-to-h">⊙ HOW TO READ THIS PAGE</div>
+        <div className="how-to-title">
+          What this view answers — and what to question
+        </div>
+        <p className="how-lede">
+          The Experiment page is what your investigation produced. It pulls the
+          configuration from <strong>Initialize</strong> and renders five
+          tools: <strong>source check</strong> for provenance,{" "}
+          <strong>model leaderboard</strong> for which algorithm won,{" "}
+          <strong>detailed metrics</strong> for the top model&apos;s full
+          diagnostic profile, <strong>candidate spotlight</strong> for the
+          selected compound&apos;s prediction probability, and{" "}
+          <strong>quality controls</strong> for whether the engineering passed
+          the audit. Every section is reactive — change the candidate, run
+          path, or any guard on Initialize and watch this page recompute.
+        </p>
+      </div>
 
       <div className="footer-actions">
         <div style={{ display: "flex", gap: 8 }}>
@@ -341,6 +396,302 @@ function HeadlineExperimentView() {
         </Link>
       </div>
     </>
+  );
+}
+
+/**
+ * Lite (HF Space) demo-mode Experiment view.
+ *
+ * Static-fixture analog of the per-pair completed-job experience for
+ * visitors with no backend to run a real investigation. Shows a focused
+ * 3-element layout (page-hero + headline leaderboard + detailed-metrics
+ * card) using mock data for the Inaxaplin → APOL1-MKD walkthrough,
+ * mirroring the lite Visualize / Validate / Operations / Settings
+ * pattern.
+ *
+ * The leaderboard reuses HeadlineLeaderboard with per-pair-flavoured
+ * rows (different scores than the panel-wide methodology view); the
+ * detailed-metrics card is custom-rendered from inline mock numbers
+ * to avoid mocking the full DetailedMetricsPanel JobResult shape.
+ */
+const LITE_EXPERIMENT_LEADERBOARD: readonly LeaderboardRow[] = [
+  {
+    model: "Stacking ensemble (Pauli)",
+    family: "hybrid",
+    prAuc: 0.827,
+    rocAuc: 0.811,
+    deltaClassical: 0.018,
+    isTop: true,
+    params: "1.4k",
+  },
+  {
+    model: "RandomForest-Optimized",
+    family: "classical",
+    prAuc: 0.812,
+    rocAuc: 0.798,
+    deltaClassical: 0.003,
+    isTop: false,
+    params: "612",
+  },
+  {
+    model: "ExtraTrees-Optimized",
+    family: "classical",
+    prAuc: 0.804,
+    rocAuc: 0.792,
+    deltaClassical: -0.005,
+    isTop: false,
+    params: "624",
+  },
+  {
+    model: "QSVC-Optimized (Pauli)",
+    family: "quantum",
+    prAuc: 0.781,
+    rocAuc: 0.769,
+    deltaClassical: -0.028,
+    isTop: false,
+    params: "n",
+  },
+  {
+    model: "LogisticRegression",
+    family: "classical",
+    prAuc: 0.703,
+    rocAuc: 0.691,
+    deltaClassical: -0.106,
+    isTop: false,
+    params: "129",
+  },
+];
+
+const LITE_EXPERIMENT_METRICS = {
+  prAuc: 0.827,
+  prAucCi: [0.798, 0.853] as const,
+  rocAuc: 0.811,
+  rocAucCi: [0.787, 0.834] as const,
+  brier: 0.142,
+  ece: 0.038,
+  cvFolds: [0.812, 0.831, 0.836, 0.819, 0.836] as const,
+};
+
+function ExperimentLiteView() {
+  const m = LITE_EXPERIMENT_METRICS;
+  const cvMean = m.cvFolds.reduce((a, b) => a + b, 0) / m.cvFolds.length;
+  const cvSpread = Math.max(...m.cvFolds) - Math.min(...m.cvFolds);
+
+  return (
+    <>
+      <div className="page-hero">
+        <div>
+          <div className="step">02 · EXPERIMENT</div>
+          <h1 className="h1">What this investigation produced</h1>
+          <p className="lede">
+            Inaxaplin → APOL1-mediated kidney disease, scored across five
+            model families. The Stacking ensemble (Pauli feature map) is
+            the top per-pair model at{" "}
+            <strong style={{ color: "var(--ink)" }}>
+              {m.prAuc.toFixed(3)}
+            </strong>{" "}
+            PR-AUC, with bootstrap 95% CI{" "}
+            <strong style={{ color: "var(--ink)" }}>
+              [{m.prAucCi[0].toFixed(3)}, {m.prAucCi[1].toFixed(3)}]
+            </strong>
+            . Headline mode shows the panel-wide preregistered comparison;
+            this is the per-candidate view.
+          </p>
+        </div>
+        <span
+          className="pill"
+          style={{ background: "var(--paper-alt)", color: "var(--gold)" }}
+        >
+          ● demo
+        </span>
+      </div>
+
+      <HeadlineLeaderboard rows={LITE_EXPERIMENT_LEADERBOARD} />
+
+      <section className="panel">
+        <div className="panel-head">
+          <div>
+            <div className="eyebrow">TOOL · DETAILED METRICS</div>
+            <div className="panel-title">
+              Top model — full metric breakdown
+            </div>
+          </div>
+          <span className="badge">Demo</span>
+        </div>
+        <p className="panel-purpose">
+          Bootstrap confidence intervals, calibration error, and 5-fold
+          cross-validation variance for the top model in this run. The
+          full version pulls these from the live job result; the lite
+          build serves the same structure with fixture numbers.
+        </p>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+            gap: 14,
+            margin: "12px 0 16px",
+          }}
+        >
+          <MetricCell
+            label="PR-AUC"
+            value={m.prAuc.toFixed(3)}
+            sub={`CI [${m.prAucCi[0].toFixed(3)}, ${m.prAucCi[1].toFixed(3)}]`}
+          />
+          <MetricCell
+            label="ROC-AUC"
+            value={m.rocAuc.toFixed(3)}
+            sub={`CI [${m.rocAucCi[0].toFixed(3)}, ${m.rocAucCi[1].toFixed(3)}]`}
+          />
+          <MetricCell
+            label="Brier"
+            value={m.brier.toFixed(3)}
+            sub="lower is better"
+          />
+          <MetricCell
+            label="ECE"
+            value={m.ece.toFixed(3)}
+            sub="expected calibration error"
+          />
+          <MetricCell
+            label="CV mean"
+            value={cvMean.toFixed(3)}
+            sub={`5-fold · spread ${cvSpread.toFixed(3)}`}
+          />
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            gap: 6,
+            alignItems: "flex-end",
+            height: 56,
+            marginBottom: 4,
+          }}
+          aria-label="Five-fold CV PR-AUC bars"
+          role="img"
+        >
+          {m.cvFolds.map((v, i) => {
+            const minH = 16;
+            const maxH = 56;
+            const lo = Math.min(...m.cvFolds);
+            const hi = Math.max(...m.cvFolds);
+            const span = Math.max(hi - lo, 0.001);
+            const h = minH + ((v - lo) / span) * (maxH - minH);
+            return (
+              <div
+                key={i}
+                style={{
+                  flex: 1,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 4,
+                }}
+              >
+                <div
+                  style={{
+                    width: "100%",
+                    height: h,
+                    background: "var(--gold)",
+                    opacity: 0.85,
+                    borderRadius: 2,
+                  }}
+                />
+                <span
+                  style={{
+                    fontSize: 9.5,
+                    color: "var(--muted)",
+                    fontFamily: "var(--font-mono), monospace",
+                  }}
+                >
+                  f{i}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            fontSize: 10,
+            color: "var(--faint)",
+            fontFamily: "var(--font-mono), monospace",
+          }}
+        >
+          <span>5-fold CV · PR-AUC per fold</span>
+          <span>
+            min {Math.min(...m.cvFolds).toFixed(3)} · max{" "}
+            {Math.max(...m.cvFolds).toFixed(3)}
+          </span>
+        </div>
+      </section>
+
+      <div className="footer-actions">
+        <div style={{ display: "flex", gap: 8 }}>
+          <Link className="btn" href="/initialize">
+            ⌥ Back to Initialize
+          </Link>
+        </div>
+        <Link className="btn-primary" href="/validate">
+          Validate this candidate →
+        </Link>
+      </div>
+    </>
+  );
+}
+
+function MetricCell({
+  label,
+  value,
+  sub,
+}: {
+  label: string;
+  value: string;
+  sub: string;
+}) {
+  return (
+    <div
+      style={{
+        background: "var(--paper-alt)",
+        border: "1px solid var(--border)",
+        borderRadius: 4,
+        padding: "10px 12px",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 10,
+          letterSpacing: "0.12em",
+          color: "var(--muted)",
+          fontFamily: "var(--font-mono), monospace",
+          fontWeight: 700,
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontSize: 22,
+          color: "var(--ink)",
+          fontWeight: 600,
+          marginTop: 2,
+          fontFamily: "var(--font-mono), monospace",
+        }}
+      >
+        {value}
+      </div>
+      <div
+        style={{
+          fontSize: 10.5,
+          color: "var(--faint)",
+          marginTop: 2,
+        }}
+      >
+        {sub}
+      </div>
+    </div>
   );
 }
 

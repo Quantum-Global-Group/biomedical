@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
 import { DecisionHistory } from "@/components/validate/DecisionHistory";
 import { HeadlineTrustScorecard } from "@/components/validate/HeadlineTrustScorecard";
 import { MetricStrip } from "@/components/validate/MetricStrip";
@@ -9,7 +10,21 @@ import { ReviewerDecisionPanel } from "@/components/validate/ReviewerDecisionPan
 import { SkepticNotesEditor } from "@/components/validate/SkepticNotesEditor";
 import { SkepticView } from "@/components/validate/SkepticView";
 import { TrustRadar } from "@/components/validate/TrustRadar";
+import { isLiteMode } from "@/lib/liteMode";
+import type {
+  SkepticWarning,
+  TrustScorecard,
+} from "@/lib/api/client";
+
+// Constant-folded so the lite-only branch DCEs out of the full build
+// and the heavy demo path (useValidate fetch + 6-panel layout) DCEs
+// out of the lite trace when this resolves to true.
+const IS_LITE = isLiteMode();
 import { useDashboardMode } from "@/lib/dashboardMode/DashboardModeProvider";
+import {
+  SHORTCUT_EVENT,
+  type ShortcutEventDetail,
+} from "@/lib/shortcuts/useKeyboardShortcuts";
 import { useValidate } from "@/lib/validate/useValidate";
 import type { Job } from "@/lib/api/client";
 
@@ -42,11 +57,40 @@ export function ValidateClient({
   const { mode, hydrated } = useDashboardMode();
   const v = useValidate({ initialJobId: jobIdFromUrl, initialJob });
 
+  // Wire keyboard shortcuts K / V / X to dispatch the same `submitDecision`
+  // path the on-screen Keep / Review / Reject buttons use, so the decision
+  // payload (integrity-guard snapshot, jobId, cvStd, evidenceSources, …)
+  // is identical regardless of input method. Headline mode skips this —
+  // there's no specific candidate to log a decision against.
+  useEffect(() => {
+    if (mode === "headline") return;
+    if (v.phase !== "ready") return;
+    function onShortcut(e: Event) {
+      const detail = (e as CustomEvent<ShortcutEventDetail>).detail;
+      if (!detail) return;
+      if (detail.action === "decision-keep") void v.submitDecision("keep");
+      else if (detail.action === "decision-review") void v.submitDecision("review");
+      else if (detail.action === "decision-reject") void v.submitDecision("reject");
+    }
+    window.addEventListener(SHORTCUT_EVENT, onShortcut);
+    return () => window.removeEventListener(SHORTCUT_EVENT, onShortcut);
+  }, [mode, v.phase, v.submitDecision]);
+
   // Headline mode is decoupled from any specific candidate / job — render
   // the methodology view (preregistered Trust Scorecard with § citations)
   // regardless of jobId. Wait for hydration so we don't flash demo first.
   if (hydrated && mode === "headline") {
     return <HeadlineValidateView />;
+  }
+
+  // Lite (HF Space) demo: there's no FastAPI to hydrate a candidate from,
+  // so the useValidate phase will land on `no-job` and the page would
+  // render the EmptyState. Substitute a focused 3-panel demo view with
+  // mock fixtures (TrustRadar + SkepticView + verdict summary) that
+  // mirrors the lite Visualize / Operations / Settings 3-card pattern.
+  // Headline mode handled above; this only fires for demo mode in lite.
+  if (IS_LITE && hydrated) {
+    return <ValidateLiteView />;
   }
 
   if (v.phase === "no-job") return <EmptyState />;
@@ -162,7 +206,11 @@ export function ValidateClient({
         </span>
       </div>
 
-      <MetricStrip job={job} latestDecision={latestDecisionForPair} />
+      <MetricStrip
+        job={job}
+        latestDecision={latestDecisionForPair}
+        pairDecisions={v.pairDecisions}
+      />
 
       <TrustRadar scorecard={result.trustScorecard} />
 
@@ -373,6 +421,122 @@ function HeadlineValidateView() {
           <Link className="btn" href="/initialize">
             ← Re-Initialize (demo)
           </Link>
+          <Link className="btn" href="/experiment">
+            ⌥ Back to Experiment
+          </Link>
+        </div>
+        <Link className="btn-primary" href="/visualize">
+          Visualize evidence →
+        </Link>
+      </div>
+    </>
+  );
+}
+
+/**
+ * Lite (HF Space) demo-mode Validate view.
+ *
+ * Static-fixture analog of the per-pair validate experience for visitors
+ * who don't have a backend to hydrate a real Job from. Shows three
+ * focused panels mirroring the lite Visualize / Operations / Settings
+ * 3-card pattern: a candidate-summary header, the TrustRadar five-axis
+ * polygon, and the SkepticView counter-arguments. No fetches, no
+ * decision logging — this is a "feel for the surface" demo.
+ *
+ * The fixtures are the same Inaxaplin → APOL1-mediated kidney disease
+ * walkthrough the demo mode tells across Initialize / Experiment /
+ * Visualize, so the lite story stays consistent across pages.
+ */
+const LITE_TRUST_SCORECARD: TrustScorecard = {
+  composite: 0.82,
+  axes: [
+    { axis: "clinical", value: 0.78, passing: true },
+    { axis: "mechanism", value: 0.86, passing: true },
+    { axis: "model", value: 0.83, passing: true },
+    { axis: "baseline", value: 0.71, passing: true },
+    { axis: "artifact", value: 0.92, passing: true },
+  ],
+};
+
+const LITE_SKEPTIC_WARNINGS: readonly SkepticWarning[] = [
+  {
+    source: "delta-classical",
+    severity: "info",
+    message:
+      "Hybrid stacking ensemble beats the best classical baseline by +0.0149 PR-AUC — meaningful but not enormous. Confirm the delta survives 5-fold CV before treating it as decisive.",
+  },
+  {
+    source: "cv-variance",
+    severity: "warn",
+    message:
+      "Top-fold and bottom-fold PR-AUC differ by 0.041 in this demo run. Real-data variance can mask family differences; bootstrap CIs settle the question (see headline mode).",
+  },
+  {
+    source: "anchor-mismatch",
+    severity: "info",
+    message:
+      "Anchor target APOL1 carries strong genetic-association evidence in AMKD; if you swap to a non-APOL1 disease the path-plausibility drops sharply.",
+  },
+];
+
+function ValidateLiteView() {
+  const compoundName = "Inaxaplin";
+  const diseaseName = "APOL1-mediated kidney disease";
+  const modelScore = 0.7987;
+  const topModel = "Stacking ensemble (Pauli)";
+  const trustPct = Math.round(LITE_TRUST_SCORECARD.composite * 100);
+
+  return (
+    <>
+      <div className="page-hero">
+        <div>
+          <div className="step">03 · VALIDATE</div>
+          <h1 className="h1">Decide whether to trust this candidate</h1>
+          <p className="lede">
+            A high model score is not evidence. The selected candidate{" "}
+            <strong style={{ color: "var(--ink)" }}>{compoundName}</strong>{" "}
+            against{" "}
+            <strong style={{ color: "var(--ink)" }}>{diseaseName}</strong>{" "}
+            earned{" "}
+            <strong style={{ color: "var(--ink)" }}>
+              {modelScore.toFixed(3)}
+            </strong>{" "}
+            from <strong style={{ color: "var(--ink)" }}>{topModel}</strong>;
+            this lite view splits that score into the five trust axes and
+            flags the strongest counter-arguments. Composite trust:{" "}
+            <strong style={{ color: "var(--ink)" }}>{trustPct}/100</strong>.
+          </p>
+        </div>
+        <span
+          className="pill"
+          style={{ background: "var(--paper-alt)", color: "var(--gold)" }}
+        >
+          ● demo
+        </span>
+      </div>
+
+      <TrustRadar scorecard={LITE_TRUST_SCORECARD} />
+
+      <section className="panel">
+        <div className="panel-head">
+          <div>
+            <div className="eyebrow">TOOL · SKEPTIC VIEW</div>
+            <div className="panel-title">
+              What could weaken this candidate
+            </div>
+          </div>
+          <span className="badge">Critique</span>
+        </div>
+        <div className="panel-purpose">
+          The points here exist to be argued against. If you can answer all
+          three with new evidence, your case is stronger than the score
+          alone suggests.
+        </div>
+        <SkepticView warnings={LITE_SKEPTIC_WARNINGS} />
+      </section>
+
+      <div className="footer-actions">
+        <div style={{ display: "flex", gap: 8 }}>
           <Link className="btn" href="/experiment">
             ⌥ Back to Experiment
           </Link>

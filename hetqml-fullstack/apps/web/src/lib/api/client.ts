@@ -38,6 +38,10 @@ export interface LeaderboardRow {
   rocAuc: number;
   deltaClassical: number;
   isTop: boolean;
+  /** Display-formatted parameter count (e.g. "28", "2.1k", "n"). Plain
+   * number-like strings are used by the leaderboard footer to compute the
+   * path-aware "params / classical" ratio. Defaults to "—" when omitted. */
+  params?: string;
 }
 
 export type BenchmarkFamily = "Classical" | "Hybrid" | "Quantum";
@@ -243,6 +247,12 @@ export interface JobResult {
   interpretation: InterpretationPanel;
   quantumCircuit: QuantumCircuitInfo;
   evidencePath: EvidencePath;
+  /** 2D embedding coordinates parallel to `candidateSpotlight.ranking`.
+   * The first row is the focus pair (rank 1) and the Visualize · UMAP
+   * scatter highlights it. Coords are deterministic from the job seed
+   * so re-rendering doesn't shuffle the layout. Approx range [-1, 1].
+   * Null when the job hasn't completed; populated for completed jobs. */
+  embedding: number[][] | null;
 }
 
 export interface Job {
@@ -324,6 +334,9 @@ export interface ApiCompoundEntry {
   drugbankId: string;
   therapeuticClass: string;
   fdaApproved: boolean;
+  /** PubChem CID for the Visualize · 3D molecule viewer. Null for
+   * synthetic compounds — the viewer falls back to an empty state. */
+  pubchemCid: number | null;
 }
 export interface ApiGeneEntry {
   symbol: string;
@@ -351,6 +364,8 @@ export interface ApiIntegrityGuardEntry {
   description: string;
   critical: boolean;
   defaultOn: boolean;
+  /** Top-level group as rendered on Initialize · Evidence posture. */
+  group: string;
 }
 
 export interface DiseaseCatalogResponse extends CatalogEnvelope {
@@ -389,6 +404,29 @@ export function fetchAlgorithmsCatalog(): Promise<AlgorithmCatalogResponse> {
 }
 export function fetchIntegrityGuardsCatalog(): Promise<IntegrityGuardCatalogResponse> {
   return request<IntegrityGuardCatalogResponse>("/catalog/integrity-guards");
+}
+
+// --- Molecule SDF --------------------------------------------------------
+
+/** Fetch a 3D SDF for a PubChem CID via the API's cached PubChem proxy.
+ *
+ * Returns the raw SDF text (suitable for `viewer.addModel(text, "sdf")`
+ * with 3Dmol). Throws on 404 ("CID not found") and other non-2xx
+ * responses; callers should display an empty/error state. */
+export async function getMoleculeSdf(cid: number): Promise<string> {
+  const res = await fetch(`${apiBase()}/molecule/${cid}`, {
+    headers: { accept: "chemical/x-mdl-sdfile,text/plain;q=0.9" },
+  });
+  if (!res.ok) {
+    let detail: string;
+    try {
+      detail = (await res.json()).detail ?? res.statusText;
+    } catch {
+      detail = res.statusText;
+    }
+    throw new Error(`${res.status} ${detail}`);
+  }
+  return res.text();
 }
 
 // --- Operations API ------------------------------------------------------
@@ -586,6 +624,16 @@ export interface DecisionRunPath {
   family: "classical" | "hybrid" | "quantum";
 }
 
+/** Snapshot row of the integrity-guard panel at decision time. Mirrors
+ * `hetqml_api.schemas.IntegrityGuardState` so a future audit can replay
+ * which guards were on/off when the reviewer clicked Keep/Review/Reject. */
+export interface DecisionIntegrityGuard {
+  id: string;
+  label: string;
+  passing: boolean;
+  critical: boolean;
+}
+
 export interface DecisionCreateInput {
   pairKey: string;
   verdict: DecisionVerdict;
@@ -598,6 +646,14 @@ export interface DecisionCreateInput {
   trustScore: number;
   trustAxes: DecisionTrustAxis[];
   guardsCompromised: number;
+  /** Full per-guard snapshot — not just the compromised count. */
+  integrityGuards?: DecisionIntegrityGuard[];
+  /** ML run id (jobId) so the decision binds to a specific run, not just a pair. */
+  jobId?: string;
+  /** CV PR-AUC std across folds, captured server-side at decision time. */
+  cvStd?: number;
+  /** Provenance / evidence-source paths surfaced on Visualize at decision time. */
+  evidenceSources?: string[];
   note?: string | null;
 }
 
@@ -614,6 +670,10 @@ export interface DecisionRecord {
   trustScore: number;
   trustAxes: DecisionTrustAxis[];
   guardsCompromised: number;
+  integrityGuards?: DecisionIntegrityGuard[] | null;
+  jobId?: string | null;
+  cvStd?: number | null;
+  evidenceSources?: string[];
   timestamp: string;
   note: string | null;
 }
@@ -701,6 +761,10 @@ export interface QuantumSettings {
 }
 export interface IbmConnectionSettings {
   crn: string;
+  /** IBM Quantum Platform API token (BYOK). When set together with `crn`,
+   * the runner submits real-hardware quantum jobs. Empty → local Aer
+   * simulator. */
+  apiToken: string;
   validated: boolean;
   planTier: string | null;
   instanceName: string | null;

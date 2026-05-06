@@ -26,6 +26,10 @@ interface Props {
   onChange: (next: string) => void;
   /** When false, field waits for upstream CASCADE_ORDER fields (disease → … → metaedge). */
   enforceCascadeOrder?: boolean;
+  /** Optional canonical "total in Hetionet" suffix for the count line —
+   * e.g. "1,552 total in Hetionet" or "24 metaedges · 2,250,197 edges".
+   * When omitted, the count line falls back to "(catalog)". */
+  totalInHetionet?: string;
 }
 
 type GuideMode = "guided" | "all";
@@ -41,6 +45,7 @@ export function ParameterCombobox({
   selection,
   onChange,
   enforceCascadeOrder = true,
+  totalInHetionet,
 }: Props) {
   const inputId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -212,7 +217,9 @@ export function ParameterCombobox({
             ) : null}
             <div className="combo-list-head">
               {filtered.length} of {options.length}{" "}
-              <span className="count">(catalog)</span>
+              <span className="count">
+                ({totalInHetionet ?? "catalog"})
+              </span>
             </div>
             {filtered.length === 0 ? (
               <div className="combo-empty">

@@ -74,3 +74,21 @@ input:focus-visible {
   gap: 4px;
 }
 
+
+/* Candidate Context — variants for approval-trial state and equity heading
+ * tone. The base .approval-trial / .ctx-equity / .ctx-section-h come from
+ * hetqml-export.css; these add an "approved" green and an "experimental"
+ * sienna, plus a sienna heading variant for the EQUITY / ANCESTRY block. */
+.approval-trial.approved {
+  color: var(--green);
+}
+.approval-trial.experimental {
+  color: var(--sienna);
+}
+.ctx-section-h.sienna {
+  color: var(--sienna);
+}
+.ctx-footer em {
+  font-style: italic;
+  color: var(--muted);
+}

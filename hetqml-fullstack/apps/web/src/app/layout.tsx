@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "@/styles/hetqml-export.css";
 import "@/styles/legacy-overrides.css";
+import { KeyboardShortcuts } from "@/components/shell/KeyboardShortcuts";
 import { DashboardModeProvider } from "@/lib/dashboardMode/DashboardModeProvider";
 
 // Self-hosted, subset, swap fallback so first paint uses the local fallback
@@ -33,7 +34,10 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
       <body>
-        <DashboardModeProvider>{children}</DashboardModeProvider>
+        <DashboardModeProvider>
+          <KeyboardShortcuts />
+          {children}
+        </DashboardModeProvider>
       </body>
     </html>
   );

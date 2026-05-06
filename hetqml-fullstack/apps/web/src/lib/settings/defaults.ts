@@ -39,6 +39,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   },
   ibmConnection: {
     crn: "",
+    apiToken: "",
     validated: false,
     planTier: null,
     instanceName: null,

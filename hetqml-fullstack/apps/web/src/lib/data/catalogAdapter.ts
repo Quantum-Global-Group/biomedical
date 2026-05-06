@@ -30,6 +30,7 @@ export function adaptCompound(api: ApiCompoundEntry): CompoundEntry {
     name: api.name,
     drugbank: api.drugbankId,
     category: api.therapeuticClass,
+    pubchemCid: api.pubchemCid ?? null,
   };
 }
 
