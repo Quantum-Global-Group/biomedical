@@ -42,6 +42,8 @@ export interface LeaderboardRow {
    * number-like strings are used by the leaderboard footer to compute the
    * path-aware "params / classical" ratio. Defaults to "—" when omitted. */
   params?: string;
+  /** RUN = metrics spliced from this job's ML run (path-aware top); SIM = scaffold. */
+  rowStatus?: "RUN" | "SIM";
 }
 
 export type BenchmarkFamily = "Classical" | "Hybrid" | "Quantum";
@@ -248,8 +250,9 @@ export interface JobResult {
   quantumCircuit: QuantumCircuitInfo;
   evidencePath: EvidencePath;
   /** 2D embedding coordinates parallel to `candidateSpotlight.ranking`.
-   * The first row is the focus pair (rank 1) and the Visualize · UMAP
-   * scatter highlights it. Coords are deterministic from the job seed
+   * The first row is the focus pair (rank 1) and the Visualize embedding
+   * scatter highlights it. Values are an API-seeded surrogate layout (not
+   * UMAP / learned embeddings). Coords are deterministic from the job seed
    * so re-rendering doesn't shuffle the layout. Approx range [-1, 1].
    * Null when the job hasn't completed; populated for completed jobs. */
   embedding: number[][] | null;

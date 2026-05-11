@@ -279,7 +279,7 @@ export function UmapScatterPanel({
             emitVizSync({
               compound: picked.point.compound,
               disease: picked.point.disease,
-              source: "umap",
+              source: "embedding",
             });
           }
         }
@@ -362,7 +362,7 @@ export function UmapScatterPanel({
     phase === "loading"
       ? "● loading"
       : phase === "ready"
-        ? "● live"
+        ? "● ready"
         : phase === "error"
           ? "● error"
           : phase === "no-data"
@@ -376,19 +376,20 @@ export function UmapScatterPanel({
             : "○ idle";
 
   return (
-    <section className="panel" data-panel="umap">
+    <section className="panel" data-panel="embedding-scatter">
       <div className="panel-head">
         <div>
-          <div className="eyebrow">VIEW · 3D UMAP</div>
+          <div className="eyebrow">VIEW · CANDIDATE LAYOUT</div>
           <div className="panel-title">Where this candidate sits</div>
         </div>
         <span className="badge">Three.js</span>
       </div>
       <p className="panel-purpose">
-        2D projection of the candidate set — tight clustering with the
-        candidate near a known centroid is mechanistic corroboration.
-        Click a point to focus that pair across panels (when auto-sync
-        is on).
+        2D coordinates come from <code>JobResult.embedding</code>: a
+        deterministic surrogate layout seeded by the job (see API schema),
+        not UMAP or another reduction of learned embeddings. Proximity still
+        reflects relative scores; click a point to focus that pair across
+        panels when auto-sync is on.
       </p>
 
       <div
@@ -405,7 +406,7 @@ export function UmapScatterPanel({
         <div
           ref={hostRef}
           role="img"
-          aria-label="UMAP scatter of candidate embedding"
+          aria-label="Candidate embedding scatter plot"
           style={{ position: "absolute", inset: 0 }}
         />
         <div
@@ -452,7 +453,7 @@ export function UmapScatterPanel({
               {phase === "no-data" &&
                 (IS_LITE
                   ? "Lite build skips this WebGL panel."
-                  : "UMAP scatter unavailable for this payload.")}
+                  : "Embedding scatter unavailable for this payload.")}
               {phase === "error" &&
                 `Unable to render WebGL scatter — ${errorMessage ?? "unknown error"}`}
               {phase === "idle" && "preparing scatter plot…"}
@@ -509,12 +510,12 @@ export function UmapScatterPanel({
       </div>
 
       <div className="panel-footer" style={{ marginTop: 12 }}>
-        <span>RotatE 128D embeddings projected to 2D</span>
+        <span>API-seeded 2D layout (surrogate, not UMAP)</span>
         <span>
           <em>
             {phase === "ready"
-              ? "candidate at cluster centroid"
-              : "embedding coords from JobResult.embedding"}
+              ? "coords from JobResult.embedding"
+              : "awaiting JobResult.embedding"}
           </em>
         </span>
       </div>

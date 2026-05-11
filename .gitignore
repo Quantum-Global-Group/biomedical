@@ -1,40 +1,131 @@
-# package manager caches
-.pnpm-store/
-node_modules/
-
-# editor / IDE
+# -----------------------------------------------------------------------------
+# Dot-prefixed tooling (local-only; never commit agent / IDE state)
+# We ignore specific directories, not every hidden path — keep `.github/`, etc.
+# -----------------------------------------------------------------------------
 .cursor/
-.vscode/
-.idea/
-.DS_Store
+.claude/
+.codex/
+.continue/
+.codeium/
+.windsurf/
+.augment/
+.factory/
+.kilocode/
+.specstory/
+.idx/
+.zed/
+.fleet/
+.qodo/
+.trae/
+.openhands/
+.aider*
+.roo/
+.roomodes/
 
-# build output
+# package managers & JS/TS
+node_modules/
+.pnpm-store/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+*.tsbuildinfo
+.eslintcache
+.stylelintcache
+.prettiercache
+.parcel-cache/
+.cache/
+*.pid
+*.seed
+*.pid.lock
+
+# Next.js / Turborepo / bundlers
 .next/
 out/
 dist/
+build/
 .turbo/
+.vercel/
+.nuxt/
+.svelte-kit/
+.vite/
+.tanstack/
+
+# coverage & test artifacts
 coverage/
+*.lcov
+.nyc_output/
+htmlcov/
+.pytest_cache/
+.hypothesis/
+.tox/
+nosetests.xml
+junit.xml
+pytest-report/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+.mypy_cache/
+.ruff_cache/
+.dmypy.json
+dmypy.json
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+*.egg
+MANIFEST
+celerybeat-schedule
+
+# env & secrets
+.env
+.env.*
+!.env.example
+!.env*.example
+
+# OS & editors
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# logs & temp
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# databases & local data (often machine-specific)
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+.data/
+
+# Fly.io local CLI state (tokens / app context)
+.fly/
+
 # Generated static export for the HF Space lite deploy
 # (`pnpm --filter hetqml-web export:hf`). The hf_space/ directory itself
 # is tracked (README + space metadata); only the generated static/ inside
 # is ignored.
 hetqml-fullstack/apps/web/hf_space/static/
-
-# python
-__pycache__/
-*.pyc
-.venv/
-.pytest_cache/
-.ruff_cache/
-.mypy_cache/
-
-# env files
-.env
-.env.local
-.env.*.local
-
-# logs
-*.log
-
-# Claude Code local config (per-machine launch.json, etc.)
-.claude/

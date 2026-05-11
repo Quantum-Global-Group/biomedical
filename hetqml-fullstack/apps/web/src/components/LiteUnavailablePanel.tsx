@@ -42,7 +42,7 @@ const PAGE_COPY: Record<
     title: "Visualize is live-only",
     lede:
       "Visualize renders 13 panels driven by a completed job — 3D knowledge " +
-      "graph, molecule viewer, quantum circuit, evidence overlays, UMAP, " +
+      "graph, molecule viewer, quantum circuit, evidence overlays, embedding scatter, " +
       "model agreement, and more. All of those need a live FastAPI run with " +
       "real result tensors. The static export ships no backend, and dropping " +
       "the 3D + quantum-circuit dependencies keeps the HF bundle small.",

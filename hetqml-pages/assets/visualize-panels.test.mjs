@@ -219,7 +219,7 @@ test("3D knowledge graph panel renders a stage and reports node/edge counts", ()
   assert.match(html, new RegExp(`${nodeCount} nodes · ${edgeCount} edges`));
 });
 
-test("3D UMAP panel renders a stage and the projection note", () => {
+test("embedding scatter panel renders a stage and the projection note", () => {
   const html = renderUmap3D();
   assert.match(html, /data-viz-umap/);
   assert.match(html, /data-viz-umap-stage/);

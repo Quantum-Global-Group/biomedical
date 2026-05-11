@@ -200,6 +200,25 @@ function CompletedView({ job }: { job: Job }) {
           <div className="step">02 · EXPERIMENT</div>
           <h1 className="h1">What this investigation produced</h1>
           <p className="lede">{lede}</p>
+          <p
+            className="panel-purpose"
+            style={{
+              marginTop: 14,
+              marginBottom: 0,
+              maxWidth: 720,
+              color: "var(--muted)",
+              fontSize: 13,
+              lineHeight: 1.55,
+            }}
+          >
+            <strong style={{ color: "var(--ink)" }}>Data fidelity.</strong>{" "}
+            Top-line metrics and the path-aware leaderboard reflect this job&apos;s
+            API execution path when the runner splices a real model result (
+            <strong>RUN</strong> on that leaderboard row). Other leaderboard rows
+            and benchmark-suite cells use deterministic simulated fills keyed off
+            that headline — treat <strong>SIM</strong> as scaffolding, not separate
+            live runs.
+          </p>
         </div>
         <span
           className="pill"

@@ -118,6 +118,9 @@ export function BenchmarkSuitePanel({ result }: Props) {
       <p className="panel-purpose">
         Comprehensive evaluation across classification, ranking, calibration,
         resource efficiency, and (where applicable) quantum hardware metrics.
+        Row status <strong>SIM</strong> means tab cells are deterministic
+        simulated displays keyed to this job&apos;s leaderboard — not separate
+        live benchmark runs.
       </p>
       <div className="benchmark-suite" data-benchmark-suite>
         <div className="benchmark-tabs" role="tablist" aria-label="Benchmark Suite tabs">
@@ -214,7 +217,7 @@ export function BenchmarkSuitePanel({ result }: Props) {
                     <td>
                       <span
                         className={`benchmark-status ${
-                          row.status === "LIVE"
+                          row.status === "SIM" || row.status === "LIVE"
                             ? "benchmark-status-live"
                             : "benchmark-status-fallback"
                         }`}

@@ -17,6 +17,31 @@ SELECTION = {
     "metaedge": "CtD · Compound–treats–Disease",
 }
 
+# Golden wire-shape guard: completed JobResult JSON keys (camelCase via API).
+EXPECTED_JOB_RESULT_KEYS = frozenset(
+    {
+        "metrics",
+        "detailedMetrics",
+        "leaderboard",
+        "benchmarkRows",
+        "statComparison",
+        "candidateSpotlight",
+        "integrityGuards",
+        "trustScorecard",
+        "reliability",
+        "skepticWarnings",
+        "evidenceMatrix",
+        "modelAgreement",
+        "provenance",
+        "qualityFlags",
+        "evidenceOverlays",
+        "interpretation",
+        "quantumCircuit",
+        "evidencePath",
+        "embedding",
+    }
+)
+
 
 async def _wait(client, job_id: str) -> dict:
     for _ in range(80):
@@ -35,6 +60,7 @@ async def test_completed_job_emits_full_result(client):
 
     assert body["result"] is not None
     result = body["result"]
+    assert set(result.keys()) == EXPECTED_JOB_RESULT_KEYS
 
     # top-line metrics still present and mirror result.metrics
     assert body["metrics"] == result["metrics"]
@@ -51,9 +77,19 @@ async def test_completed_job_emits_full_result(client):
     # leaderboard
     assert len(result["leaderboard"]) == 13
     assert sum(1 for r in result["leaderboard"] if r["isTop"]) == 1
+    row_statuses = [r["rowStatus"] for r in result["leaderboard"]]
+    assert set(row_statuses) <= {"RUN", "SIM"}
+    assert row_statuses.count("RUN") <= 1
+    # With a real AlgoResult splice: exactly one RUN (path-aware top). Under
+    # synthetic_only test harnesses: all SIM — still an honest, stable contract.
+    if row_statuses.count("RUN") == 1:
+        assert row_statuses.count("SIM") == 12
+    else:
+        assert row_statuses.count("SIM") == 13
 
     # benchmark rows mirror leaderboard length and carry every tab's cells
     assert len(result["benchmarkRows"]) == 13
+    assert all(row["status"] == "SIM" for row in result["benchmarkRows"])
     cells = result["benchmarkRows"][0]["cells"]
     for key in (
         "prAuc",

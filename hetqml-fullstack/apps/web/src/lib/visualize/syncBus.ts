@@ -4,15 +4,15 @@
  * Visualize · auto-sync bus.
  *
  * Cross-panel selection sync without React context. The molecule
- * viewer, UMAP scatter, and KG panel all want to highlight the same
+ * viewer, embedding scatter, and KG panel all want to highlight the same
  * pair when the user clicks one of them. Wiring this through
  * VisualizeClient state would force a re-render of every sibling on
  * every click; a window-event bus keeps each panel imperatively in
  * sync with O(1) work per listener.
  *
- * Auto-sync is opt-in (toggle in the controls bar). When off, panels
- * still emit events but ignore incoming ones, so manual exploration in
- * one panel doesn't disturb the others.
+ * Auto-sync defaults on (toggle in the controls bar to disable). When off,
+ * panels still emit events but Visualize-level listeners ignore incoming
+ * ones, so manual exploration in one panel doesn't disturb the others.
  *
  * Wire shape: a single CustomEvent type carrying the pair the user
  * just focused on. Listeners filter by `source` so a panel doesn't
@@ -21,7 +21,8 @@
 
 export const VIZ_SYNC_EVENT = "hetqml:viz-sync" as const;
 
-export type VizSyncSource = "molecule" | "umap" | "kg" | "external";
+/** `embedding` = 2D surrogate layout panel (`JobResult.embedding`), not UMAP. */
+export type VizSyncSource = "molecule" | "embedding" | "kg" | "external";
 
 export interface VizSyncDetail {
   /** Compound display name (matches Selection.compound). */

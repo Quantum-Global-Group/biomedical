@@ -132,7 +132,7 @@ export const VISUALIZE_DATA = {
   migrationChecklist: [
     { id: "molecule",    label: "3D molecule viewer",         tech: "3Dmol.js · PubChem 3D conformer", status: "done" },
     { id: "kg",          label: "3D Knowledge Graph",         tech: "Three.js · force-directed layout", status: "done" },
-    { id: "umap",        label: "3D UMAP scatter",            tech: "Three.js · OrbitControls",          status: "done" },
+    { id: "umap",        label: "3D embedding scatter (demo)", tech: "Three.js · OrbitControls",          status: "done" },
     { id: "circuit",     label: "Quantum kernel circuit",     tech: "D3 · ZZFeatureMap",                 status: "done" },
     { id: "clinical",    label: "Clinical Support Strip",     tech: "4 cards",                            status: "done" },
     { id: "matrix",      label: "Evidence Strength Matrix",   tech: "6 layers × 5 sources",               status: "done" },
@@ -256,7 +256,7 @@ $$$$
     ],
   },
   umap: {
-    note: "UMAP projection of Hetionet compound embeddings · candidate plotted in gold.",
+    note: "Demo point cloud seeded for layout — not UMAP or learned Hetionet embeddings · candidate highlighted in gold.",
     points: (() => {
       const seed = 42;
       let s = seed;
@@ -655,7 +655,7 @@ export function renderUmap3D(data = VISUALIZE_DATA) {
   return `<section class="panel viz-umap" data-viz-umap>
     <div class="panel-head">
       <div>
-        <div class="eyebrow">VIEW · 3D UMAP</div>
+        <div class="eyebrow">VIEW · EMBEDDING SCATTER (DEMO)</div>
         <div class="panel-title">Compound embedding projection</div>
       </div>
       <span class="badge">Three.js</span>
@@ -1006,7 +1006,7 @@ export async function activateUmap3D(documentRef = globalThis.document) {
     if (typeof window === "undefined" || !window.THREE) throw new Error("THREE missing");
     runUmap(stage, window.THREE);
   } catch (error) {
-    setStageError(stage, "3D UMAP unavailable (CDN blocked?)");
+    setStageError(stage, "Embedding scatter unavailable (CDN blocked?)");
     stage.dataset.activated = "false";
   }
 }
@@ -1086,7 +1086,7 @@ function runUmap(stage, THREE) {
     renderer.setSize(w, h);
   };
   window.addEventListener("resize", onResize);
-  stage.dataset.engine = "three-umap";
+  stage.dataset.engine = "three-embedding-demo";
 }
 
 export async function activateKernelCircuit(documentRef = globalThis.document) {

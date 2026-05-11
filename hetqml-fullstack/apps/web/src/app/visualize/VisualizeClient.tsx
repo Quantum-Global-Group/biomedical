@@ -259,7 +259,7 @@ export function VisualizeClient({
   }, [onExportEvidence]);
 
   // --- Cross-panel auto-sync --------------------------------------------
-  // Auto-sync keeps the molecule viewer, UMAP scatter, and KG panel
+  // Auto-sync keeps the molecule viewer, embedding scatter, and KG panel
   // pointed at the same pair. Default is ON; the controls bar lets the
   // user disable it (some reviewers prefer manual exploration). Sync
   // selection seeds from the investigation pair, but a click in any
@@ -384,10 +384,30 @@ export function VisualizeClient({
           <div className="step">04 · VISUALIZE</div>
           <h1 className="h1">Inspect every layer of evidence</h1>
           <p className="lede">
-            Six panels — molecule, knowledge graph, embedding projection,
+            Six panels — molecule, knowledge graph, embedding scatter,
             quantum kernel circuit, evidence overlays, interpretation. Each
             cites a different source. Cross-panel reinforcement is what turns
             a model score into something defensible.
+          </p>
+          <p
+            className="panel-purpose"
+            style={{
+              marginTop: 14,
+              marginBottom: 0,
+              maxWidth: 720,
+              color: "var(--muted)",
+              fontSize: 13,
+              lineHeight: 1.55,
+            }}
+          >
+            <strong style={{ color: "var(--ink)" }}>Data fidelity.</strong>{" "}
+            Headline job metrics and the path-aware leaderboard row marked{" "}
+            <strong>RUN</strong> come from the API run when the runner splices a
+            real model result; many panels still attach deterministic simulated
+            narrative fields for UX scaffolding — check{" "}
+            <strong>SIM</strong> labels (suite rows and most leaderboard rows)
+            rather than treating every cell as an independent empirical
+            measurement.
           </p>
         </div>
         <span
@@ -407,9 +427,9 @@ export function VisualizeClient({
 
       <ClinicalSupportStrip job={job} result={result} />
 
-      {/* Auto-sync controls — keeps the molecule, UMAP, and KG panels
-        * focused on the same pair. Off by default for reviewers who
-        * want to explore independently. */}
+      {/* Auto-sync controls — keeps the molecule, embedding scatter, and KG panels
+        * focused on the same pair. On by default; reviewers can turn it off to
+        * explore panels independently. */}
       <div
         className="panel"
         style={{

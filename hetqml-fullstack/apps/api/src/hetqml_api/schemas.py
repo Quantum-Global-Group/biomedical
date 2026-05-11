@@ -176,11 +176,18 @@ class LeaderboardRow(CamelModel):
     # and the footer's path-aware param-ratio line (e.g. "28", "2.1k", "18k").
     # Matches the value AlgorithmEntry.params already exposes in the catalog.
     params: str = "—"
+    #: ``RUN`` when this row was spliced from a real ``AlgoResult`` (path-aware
+    #: top model); ``SIM`` for deterministic scaffold scores still shown for UX.
+    row_status: Literal["RUN", "SIM"] = "SIM"
 
 
 class BenchmarkRow(CamelModel):
     """One row of the 6-tab benchmark suite — values stored as strings so
-    formatted units (e.g. '4m 12s', '$2.14', '16,432') round-trip cleanly."""
+    formatted units (e.g. '4m 12s', '$2.14', '16,432') round-trip cleanly.
+
+    ``status`` is typically ``SIM``: tab cells are simulated for UX scaffolding,
+    not separate live benchmark harness runs (see runner ``_benchmarks``).
+    """
 
     model: str
     family: Literal["Classical", "Hybrid", "Quantum"]
@@ -363,7 +370,7 @@ class JobResult(CamelModel):
     quantum_circuit: QuantumCircuitInfo
     evidence_path: EvidencePath
 
-    # 2D embedding coordinates for the Visualize · 3D UMAP scatter, one
+    # 2D embedding coordinates for the Visualize embedding scatter, one
     # row per leaderboard pair (in the same order as `candidate_spotlight.
     # ranking`). The first row corresponds to the focus pair (rank 1) and
     # is highlighted client-side. Coordinates are deterministic from the

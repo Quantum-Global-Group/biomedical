@@ -209,6 +209,11 @@ def _leaderboard(rng: random.Random, family: str) -> list[LeaderboardRow]:
 
 
 def _benchmarks(rng: random.Random, leaderboard: list[LeaderboardRow]) -> list[BenchmarkRow]:
+    """Benchmark suite rows: tab cells are simulated strings keyed off leaderboard PR-AUC.
+
+    Status is always ``SIM`` so the UI cannot imply live benchmark harness telemetry.
+    """
+
     out: list[BenchmarkRow] = []
     for row in leaderboard:
         family_label = row.family.capitalize()
@@ -216,7 +221,7 @@ def _benchmarks(rng: random.Random, leaderboard: list[LeaderboardRow]) -> list[B
             BenchmarkRow(
                 model=row.model,
                 family=family_label,  # type: ignore[arg-type]
-                status="LIVE" if rng.random() < 0.8 else "DEV",
+                status="SIM",
                 cells={
                     # classification
                     "prAuc": f"{row.pr_auc:.3f}",
@@ -833,6 +838,8 @@ def simulate_run(job: Job, *, algo: AlgoResult | None = None) -> JobResult:
         target.family = algo.family  # type: ignore[assignment]
         target.pr_auc = round(algo.pr_auc, 4)
         target.roc_auc = round(algo.roc_auc, 4)
+    for row in leaderboard:
+        row.row_status = "RUN" if algo is not None and row.is_top else "SIM"
     benchmarks = _benchmarks(rng, leaderboard)
     top = next((r for r in leaderboard if r.is_top), leaderboard[0])
     stat_cmp = _stat_comparison(rng, top.pr_auc)

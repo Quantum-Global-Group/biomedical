@@ -33,11 +33,15 @@ export function LeaderboardPanel({ result, family }: Props) {
       <p className="panel-purpose">
         PR-AUC across the algorithms in the current run path, on the same test
         set with the same features. The honest story for this project is
-        parameter-efficiency, not raw advantage.
+        parameter-efficiency, not raw advantage. The status column comes from the
+        API: <strong>RUN</strong> on the path-aware row whose metrics were spliced
+        from this job&apos;s ML execution; <strong>SIM</strong> on deterministic
+        scaffold scores (same envelope as the benchmark suite tabs).
       </p>
       <div style={{ marginTop: 16 }}>
         {rows.map((r, i) => {
           const isTop = r.model === topId;
+          const rowStatus = r.rowStatus ?? "SIM";
           const barColor =
             r.family === "classical" ? "var(--sienna)" : "var(--teal)";
           return (
@@ -73,11 +77,12 @@ export function LeaderboardPanel({ result, family }: Props) {
                     width: 6,
                     height: 6,
                     borderRadius: "50%",
-                    background: "var(--green)",
+                    background:
+                      rowStatus === "RUN" ? "var(--green)" : "var(--amber)",
                     marginRight: 4,
                   }}
                 />
-                LIVE
+                {rowStatus}
               </div>
             </div>
           );

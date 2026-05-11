@@ -4,7 +4,7 @@
  *
  * The full Visualize page renders 13 panels driven by a real completed
  * job — 3D knowledge graph (three.js), molecule viewer (three.js),
- * quantum-circuit renderer, UMAP scatter, evidence overlays, etc. The
+ * quantum-circuit renderer, embedding scatter, evidence overlays, etc. The
  * lite build can't ship those (no backend, three.js excluded for size),
  * so this stripped-down view shows three lighter panels with static
  * fixtures so visitors get a feel for the visualisation surface
