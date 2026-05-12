@@ -66,7 +66,7 @@ def _norm_hash(label: str, salt: str) -> float:
     return int.from_bytes(digest[:4], "big", signed=False) / float(2**32)
 
 
-def _resolve_compound(compounds: list[CompoundEntry], token: str) -> CompoundEntry | None:
+def resolve_compound_entry(compounds: list[CompoundEntry], token: str) -> CompoundEntry | None:
     t = token.strip()
     for c in compounds:
         if c.name == t or c.drugbank_id == t:
@@ -74,7 +74,7 @@ def _resolve_compound(compounds: list[CompoundEntry], token: str) -> CompoundEnt
     return None
 
 
-def _resolve_disease(diseases: list[DiseaseEntry], token: str) -> DiseaseEntry | None:
+def resolve_disease_entry(diseases: list[DiseaseEntry], token: str) -> DiseaseEntry | None:
     t = token.strip()
     for d in diseases:
         if d.name == t or d.doid == t:
@@ -89,7 +89,7 @@ def _normalize_gene_token(token: str) -> str:
     return t
 
 
-def _resolve_gene(genes: list[GeneEntry], token: str) -> GeneEntry | None:
+def resolve_gene_entry(genes: list[GeneEntry], token: str) -> GeneEntry | None:
     t = _normalize_gene_token(token)
     for g in genes:
         if g.symbol == t or g.ncbi_id == t:
@@ -156,9 +156,9 @@ def try_build_catalog_feature_matrix(
     meta_code = metaedge_code_from_selection(selection.metaedge)
     edge_by_code = {m.code: m.edge_count for m in metaedges_catalog().items}
 
-    focal_c = _resolve_compound(compounds, selection.compound)
-    focal_d = _resolve_disease(diseases, selection.disease)
-    focal_g = _resolve_gene(genes, selection.gene)
+    focal_c = resolve_compound_entry(compounds, selection.compound)
+    focal_d = resolve_disease_entry(diseases, selection.disease)
+    focal_g = resolve_gene_entry(genes, selection.gene)
     if focal_c is None or focal_d is None or focal_g is None:
         return None
 
@@ -228,14 +228,14 @@ def catalog_feature_rows_for_pairs(
     if diseases is None:
         diseases = diseases_catalog().items
 
-    focal_g = _resolve_gene(genes, selection.gene)
+    focal_g = resolve_gene_entry(genes, selection.gene)
     if focal_g is None:
         return None
     meta_code = metaedge_code_from_selection(selection.metaedge)
     rows: list[np.ndarray] = []
     for compound_tok, disease_tok in candidates:
-        c = _resolve_compound(compounds, compound_tok)
-        d = _resolve_disease(diseases, disease_tok)
+        c = resolve_compound_entry(compounds, compound_tok)
+        d = resolve_disease_entry(diseases, disease_tok)
         if c is None or d is None:
             return None
         rows.append(catalog_feature_row(c, d, focal_g, meta_code, edge_by_code))

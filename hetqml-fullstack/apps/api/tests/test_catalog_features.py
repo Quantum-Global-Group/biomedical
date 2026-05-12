@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from hetqml_api.ml.algorithms import score_feature_rows_classical
 from hetqml_api.ml.catalog_features import (
     catalog_feature_row,
     metaedge_code_from_selection,
@@ -75,6 +76,23 @@ def test_build_features_synthetic_env(monkeypatch: pytest.MonkeyPatch) -> None:
     fm = build_features(sel, n_samples=60)
     assert fm.source == "synthetic"
     assert fm.feature_names[0] == "metapath_CbGaD"
+
+
+def test_score_feature_rows_classical_matches_width() -> None:
+    sel = Selection(
+        disease="Hypertension-attributed ESKD",
+        compound="Inaxaplin",
+        gene="APOL1",
+        metaedge="CtD · Compound–treats–Disease",
+    )
+    fm = build_features(sel, n_samples=80)
+    pairs = [
+        ("Inaxaplin", "Hypertension-attributed ESKD"),
+        ("Venetoclax", "Multiple myeloma"),
+    ]
+    x_c = build_features_for_candidates(sel, pairs)
+    p, d = score_feature_rows_classical(fm, x_c)
+    assert p.shape == (2,) and d.shape == (2,)
 
 
 def test_build_features_for_candidates_catalog() -> None:

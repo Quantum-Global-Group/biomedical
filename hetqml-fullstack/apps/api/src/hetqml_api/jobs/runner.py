@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import math
 import random
 from datetime import UTC, datetime
@@ -50,6 +51,8 @@ from hetqml_api.schemas import (
     TrustAxis,
     TrustScorecard,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _seed_for(job: Job) -> int:
@@ -329,8 +332,8 @@ def _embedding(
     """2D layout for the Visualize · 3D UMAP scatter.
 
     When umap-learn is installed, computes a real UMAP projection of each
-    candidate's feature vector (built with the same Gaussian structure as
-    the training data, seeded per-pair). Falls back to a deterministic
+    candidate's feature vector from ``build_features_for_candidates`` (catalog
+    or synthetic rows depending on ``HETQML_FEATURE_MATRIX_SOURCE``). Falls back to a deterministic
     hash-based surrogate when umap-learn is unavailable or the dataset is
     too small (< 2 candidates).
 
@@ -387,7 +390,9 @@ def _embedding(
     return out
 
 
-def _candidate_spotlight(rng: random.Random, base: JobMetrics, job: Job) -> CandidateSpotlight:
+def _candidate_spotlight_synthetic(
+    rng: random.Random, base: JobMetrics, job: Job
+) -> CandidateSpotlight:
     reasons = [
         f"Anchor gene {job.selection.gene} matches curated targets",
         f"{job.run_path.family.title()} pipeline emphasizes metapath {job.selection.metaedge}",
@@ -408,6 +413,27 @@ def _candidate_spotlight(rng: random.Random, base: JobMetrics, job: Job) -> Cand
         reasons=reasons,
         ranking=ranking,
     )
+
+
+def _candidate_spotlight(
+    rng: random.Random,
+    base: JobMetrics,
+    job: Job,
+    *,
+    algo: AlgoResult | None = None,
+    probs: AlgoProbs | None = None,
+) -> CandidateSpotlight:
+    """Catalog-backed ranking when a real CV run exists; else RNG scaffold."""
+    if algo is not None and probs is not None:
+        try:
+            from hetqml_api.ml.spotlight import try_build_catalog_candidate_spotlight
+
+            live = try_build_catalog_candidate_spotlight(job, base, rng)
+            if live is not None:
+                return live
+        except Exception:
+            logger.exception("catalog candidate spotlight failed; using synthetic scaffold")
+    return _candidate_spotlight_synthetic(rng, base, job)
 
 
 def _real_guard_states(
@@ -967,7 +993,7 @@ def simulate_run(
     benchmarks = _benchmarks(rng, leaderboard)
     top = next((r for r in leaderboard if r.is_top), leaderboard[0])
     stat_cmp = _stat_comparison(rng, top.pr_auc)
-    spotlight = _candidate_spotlight(rng, metrics, job)
+    spotlight = _candidate_spotlight(rng, metrics, job, algo=algo, probs=probs)
     guards = _integrity_guards(rng, algo=algo, probs=probs)
     trust = _trust(rng, metrics, guards)
     reliability = _reliability(rng, metrics, probs=probs)

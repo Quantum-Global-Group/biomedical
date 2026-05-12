@@ -606,6 +606,32 @@ def run_quantum(
     )
 
 
+def score_feature_rows_classical(
+    fm: FeatureMatrix,
+    x_cand: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Fit the same LR+GBM heads on all training rows; score new feature rows.
+
+    Returns ``(p_ensemble, delta_vs_linear)`` where ``delta_vs_linear`` is
+    ``p_ensemble - p_logistic`` (tree head bump off the linear boundary).
+    """
+    if x_cand.ndim != 2 or x_cand.shape[1] != fm.X.shape[1]:
+        raise ValueError("candidate matrix width must match training features")
+    lr = Pipeline(
+        [("scaler", StandardScaler()), ("clf", LogisticRegression(max_iter=500))]
+    )
+    lr.fit(fm.X, fm.y)
+    gbm = GradientBoostingClassifier(
+        n_estimators=80, max_depth=3, random_state=fm.selection_seed
+    )
+    gbm.fit(fm.X, fm.y)
+    p_lr = lr.predict_proba(x_cand)[:, 1]
+    p_gbm = gbm.predict_proba(x_cand)[:, 1]
+    p_ens = (p_lr + p_gbm) / 2.0
+    delta = p_ens - p_lr
+    return p_ens.astype(np.float64), delta.astype(np.float64)
+
+
 # --- Dispatcher ----------------------------------------------------------
 
 

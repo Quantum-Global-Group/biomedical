@@ -44,18 +44,17 @@ The dashboard runs a genuine ML cross-validation pipeline (classical, hybrid-qua
 
 ---
 
-### 3 · Candidate Spotlight — SYNTHETIC
+### 3 · Candidate Spotlight — CATALOG + CLASSICAL SCORES (bundled graph slice)
 
 | Item | Status |
 |---|---|
-| Compound names | `Synth-XXXXX` — random integers, not real DrugBank/PubChem IDs |
-| Disease | Real selection ID passed through |
-| Spotlight scores | `base.pr_auc − 0.02 × rank + rng jitter` |
-| Evidence matrix cells | Random states from `["live", "fallback", "supports", "weakens"]` |
-| Evidence paths | Synthetic step chains; no real Hetionet traversal |
-| UMAP embedding coords | Real UMAP of synthetic feature vectors (meaningful structure, not real biology) |
+| Compound / disease | **Curated-first** catalog names (focal pair, same-disease / same-compound neighbors, then curated random pairs; synthetic placeholders only if the catalog cannot fill six slots). |
+| Spotlight scores | **Real probabilities** — full-data logistic + GBM ensemble on the same 8-D catalog feature rows as §1 (`score_feature_rows_classical` in `ml/algorithms.py`). |
+| Activation | When a completed job has both `AlgoResult` **and** `AlgoProbs` (`simulate_run`); otherwise legacy RNG scaffold (`Synth-…`). |
+| Evidence matrix / paths | Still synthetic scaffolding (unchanged). |
+| UMAP embedding coords | Real UMAP of candidate feature rows when `umap-learn` is installed (catalog or hash fallback). |
 
-**To fix:** Replace `_candidate_spotlight()` with a real drug repurposing ranking that queries the Hetionet graph for (compound, disease) pairs connected via the selected metaedge, scored by the trained model's predicted probability on each pair's real feature vector.
+**Next:** Rank by true DWPC / path evidence from the full Hetionet export (not only catalog neighborhoods), and optionally align the scoring head with the headline family (hybrid kernel) instead of the shared classical head.
 
 ---
 
@@ -161,7 +160,7 @@ With 6 candidates and `n_neighbors=5`, UMAP will produce a meaningful 2D layout 
 | 1 | `uv sync` under `apps/api` (installs `umap-learn`; lockfile committed) | Done |
 | 2 | Land observability, preregistration, e2e harness, ORCID/decision wiring | Done when merged |
 | 3 | Pairwise DWPC / integrated scores from full Hetionet graph (replace catalog row builder) | 1–2 weeks |
-| 4 | Replace synthetic candidates with real (compound, disease) pairs from graph query | 1 week |
+| 4 | Replace synthetic candidates with real (compound, disease) pairs from graph query | Partially done — catalog slice + classical scores; full DWPC graph query remains |
 | 5 | ~~Wire `JobStore` to SQLite~~ — `SqliteJobStore` is live in `main.py` | Done |
 | 6 | Real p-values via McNemar / permutation test over CV folds | 2–3 days |
 | 7 | Clinical + mechanism trust axes from OpenTargets / GO overlap | 1–2 weeks |
@@ -172,5 +171,5 @@ With 6 candidates and `n_neighbors=5`, UMAP will produce a meaningful 2D layout 
 ## What Can Be Cited in a Paper Now
 
 - **Can cite (catalog mode):** CV methodology, calibration, bootstrap CIs, and that feature rows include **published Hetionet v1.0 metaedge totals** and curated catalog identifiers. Do **not** claim per-compound–disease DWPCs without the pairwise table.
-- **Cannot cite:** Fine-grained repurposing effect sizes from DWPCs not yet in this repo. Trust scorecard clinical/mechanism/baseline axes. Statistical comparison p-values. Candidate rankings or evidence paths (still synthetic in §3).
+- **Cannot cite:** Fine-grained repurposing effect sizes from DWPCs not yet in this repo. Trust scorecard clinical/mechanism/baseline axes. Statistical comparison p-values. Spotlight ranking as **Neo4j-derived path evidence** (it is catalog-neighborhood + classical head scores, not DWPC edge queries). Synthetic evidence matrix / paths.
 - **Must disclose:** Synthetic mode when enabled; in catalog mode, disclose that edge totals are graph-level aggregates, not per-pair path counts from a live Neo4j pull.
