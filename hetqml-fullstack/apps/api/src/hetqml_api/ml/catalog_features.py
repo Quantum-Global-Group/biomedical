@@ -143,6 +143,81 @@ def _gene_pool_same_category(
     return shuffled[:max(min_size, len(shuffled))]
 
 
+def _sample_catalog_negative_triplets(
+    compounds: list[CompoundEntry],
+    diseases: list[DiseaseEntry],
+    genes: list[GeneEntry],
+    focal_c: CompoundEntry,
+    focal_d: DiseaseEntry,
+    n_neg: int,
+    rng: np.random.Generator,
+) -> list[tuple[CompoundEntry, DiseaseEntry, GeneEntry]]:
+    """Random (compound, disease, gene) triplets with (compound, disease) ≠ focal pair."""
+    ci = rng.integers(0, len(compounds), size=n_neg * 4)
+    di = rng.integers(0, len(diseases), size=n_neg * 4)
+    triplets: list[tuple[CompoundEntry, DiseaseEntry, GeneEntry]] = []
+    for k in range(len(ci)):
+        if len(triplets) >= n_neg:
+            break
+        c, d = compounds[int(ci[k])], diseases[int(di[k])]
+        if c.name == focal_c.name and d.name == focal_d.name:
+            continue
+        gi = int(rng.integers(0, len(genes)))
+        triplets.append((c, d, genes[gi]))
+    while len(triplets) < n_neg:
+        c = compounds[int(rng.integers(0, len(compounds)))]
+        d = diseases[int(rng.integers(0, len(diseases)))]
+        if c.name == focal_c.name and d.name == focal_d.name:
+            continue
+        gi = int(rng.integers(0, len(genes)))
+        triplets.append((c, d, genes[gi]))
+    return triplets[:n_neg]
+
+
+def catalog_negatives_exclude_focal_pair(
+    selection: Selection,
+    *,
+    n_samples: int,
+    seed: int,
+) -> bool | None:
+    """True iff every catalog negative row avoids the focal compound–disease pair.
+
+    ``None`` when focal entries do not resolve in the bundled catalogs.
+    """
+    compounds = compounds_catalog().items
+    diseases = diseases_catalog().items
+    genes = genes_catalog().items
+    focal_c = resolve_compound_entry(compounds, selection.compound)
+    focal_d = resolve_disease_entry(diseases, selection.disease)
+    if focal_c is None or focal_d is None or resolve_gene_entry(genes, selection.gene) is None:
+        return None
+    rng = np.random.default_rng(seed)
+    n_neg = n_samples - n_samples // 2
+    triplets = _sample_catalog_negative_triplets(
+        compounds, diseases, genes, focal_c, focal_d, n_neg, rng
+    )
+    for c, d, _g in triplets:
+        if c.name == focal_c.name and d.name == focal_d.name:
+            return False
+    return len(triplets) == n_neg
+
+
+def max_abs_pearson_feature_target_correlation(X: np.ndarray, y: np.ndarray) -> float:
+    """Largest |ρ| between any feature column and binary ``y`` (ignores degenerate columns)."""
+    yf = y.astype(np.float64)
+    if yf.size < 2 or np.std(yf) < 1e-12:
+        return 0.0
+    best = 0.0
+    for j in range(X.shape[1]):
+        col = X[:, j].astype(np.float64)
+        if np.std(col) < 1e-12:
+            continue
+        r = np.corrcoef(col, yf)[0, 1]
+        if np.isfinite(r):
+            best = max(best, abs(float(r)))
+    return best
+
+
 def try_build_catalog_feature_matrix(
     selection: Selection,
     *,
@@ -175,26 +250,12 @@ def try_build_catalog_feature_matrix(
         ]
     )
 
-    # Negatives: random (compound, disease) not equal to focal pair.
-    ci = rng.integers(0, len(compounds), size=n_neg * 4)
-    di = rng.integers(0, len(diseases), size=n_neg * 4)
-    x_neg_list: list[np.ndarray] = []
-    for k in range(len(ci)):
-        if len(x_neg_list) >= n_neg:
-            break
-        c, d = compounds[int(ci[k])], diseases[int(di[k])]
-        if c.name == focal_c.name and d.name == focal_d.name:
-            continue
-        gi = int(rng.integers(0, len(genes)))
-        x_neg_list.append(catalog_feature_row(c, d, genes[gi], meta_code, edge_by_code))
-    # If we under-filled (unlikely), relax constraint.
-    while len(x_neg_list) < n_neg:
-        c = compounds[int(rng.integers(0, len(compounds)))]
-        d = diseases[int(rng.integers(0, len(diseases)))]
-        if c.name == focal_c.name and d.name == focal_d.name:
-            continue
-        gi = int(rng.integers(0, len(genes)))
-        x_neg_list.append(catalog_feature_row(c, d, genes[gi], meta_code, edge_by_code))
+    neg_triplets = _sample_catalog_negative_triplets(
+        compounds, diseases, genes, focal_c, focal_d, n_neg, rng
+    )
+    x_neg_list = [
+        catalog_feature_row(c, d, g, meta_code, edge_by_code) for c, d, g in neg_triplets
+    ]
 
     x_neg = np.stack(x_neg_list[:n_neg])
     x = np.vstack([x_pos, x_neg])

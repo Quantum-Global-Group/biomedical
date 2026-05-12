@@ -520,6 +520,8 @@ def _candidate_spotlight(
 def _real_guard_states(
     algo: AlgoResult,
     probs: AlgoProbs,
+    *,
+    selection: Selection | None = None,
 ) -> dict[str, bool]:
     """Assertions for guards that can be evaluated from CV outputs.
 
@@ -550,6 +552,25 @@ def _real_guard_states(
         states["shot-budget"] = algo.shots >= 512
     if algo.fidelity is not None:
         states["kernel-spread"] = algo.fidelity > 0.5
+
+    # Catalog-only checks (skip when synthetic features or unresolved selection).
+    if selection is not None:
+        from hetqml_api.ml.catalog_features import (
+            catalog_negatives_exclude_focal_pair,
+            max_abs_pearson_feature_target_correlation,
+        )
+        from hetqml_api.ml.features import _feature_matrix_source, build_features
+
+        if _feature_matrix_source() == "catalog":
+            fm = build_features(selection, n_samples=200)
+            if fm.source == "catalog":
+                hn = catalog_negatives_exclude_focal_pair(
+                    selection, n_samples=200, seed=fm.selection_seed
+                )
+                if hn is not None:
+                    states["hard-negatives"] = hn
+                max_r = max_abs_pearson_feature_target_correlation(fm.X, fm.y)
+                states["feature-leakage"] = max_r < 0.999
     return states
 
 
@@ -558,9 +579,14 @@ def _integrity_guards(
     *,
     algo: AlgoResult | None = None,
     probs: AlgoProbs | None = None,
+    selection: Selection | None = None,
 ) -> list[IntegrityGuardState]:
     cat = integrity_guards_catalog()
-    real_states = _real_guard_states(algo, probs) if algo is not None and probs is not None else {}
+    real_states = (
+        _real_guard_states(algo, probs, selection=selection)
+        if algo is not None and probs is not None
+        else {}
+    )
     out: list[IntegrityGuardState] = []
     for guard in cat.items:
         if guard.id in real_states:
@@ -1095,7 +1121,7 @@ def simulate_run(
     top = next((r for r in leaderboard if r.is_top), leaderboard[0])
     stat_cmp = _stat_comparison(rng, top.pr_auc, algo=algo, probs=probs)
     spotlight = _candidate_spotlight(rng, metrics, job, algo=algo, probs=probs)
-    guards = _integrity_guards(rng, algo=algo, probs=probs)
+    guards = _integrity_guards(rng, algo=algo, probs=probs, selection=job.selection)
     trust = _trust(rng, metrics, guards, selection=job.selection, algo=algo)
     reliability = _reliability(rng, metrics, probs=probs)
     skeptic = _skeptic(

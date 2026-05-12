@@ -65,7 +65,7 @@ The dashboard runs a genuine ML cross-validation pipeline (classical, hybrid-qua
 | Axis | Status | Source |
 |---|---|---|
 | model | ● Real | `base.pr_auc + 0.05` (disclosed offset) |
-| artifact | ◐ Semi-real | Pass rate of integrity guards (7 real + 16 RNG) |
+| artifact | ◐ Semi-real | Pass rate of integrity guards (7–9 real assertions from CV + catalog construction, remainder RNG) |
 | clinical | ◐ Semi-real | **Default:** deterministic proxy from bundled catalog (FDA flag, therapeutic class vs disease category). **Optional:** OpenTargets drug↔disease clinical-stage evidence when `HETQML_TRUST_OPENTARGETS=1` (public GraphQL; cached per selection). |
 | mechanism | ◐ Semi-real | **Default:** gene vs disease category heuristics from catalog. **Optional:** OpenTargets MOA gene match + target–disease association slice when `HETQML_TRUST_OPENTARGETS=1`. |
 | baseline | ● Real | Headline PR-AUC ÷ published Hetionet metapath AUROC anchors (Himmelstein et al., eLife 2017), keyed by metaedge code — `trust_axes.baseline_axis_value` |
@@ -76,9 +76,9 @@ The dashboard runs a genuine ML cross-validation pipeline (classical, hybrid-qua
 
 ---
 
-### 5 · Integrity Guards — MIXED (7 real / 16 RNG)
+### 5 · Integrity Guards — MIXED (7–9 real / 14–16 RNG)
 
-**Real-asserted (7):**
+**Real-asserted (always five CV-backed; up to four more by path):**
 
 | Guard | Assertion |
 |---|---|
@@ -87,22 +87,30 @@ The dashboard runs a genuine ML cross-validation pipeline (classical, hybrid-qua
 | `dwpc-baseline` | `PR-AUC > 0.35` (Himmelstein 2017 Hetionet baseline) |
 | `provenance` | Always passes (job hash matches selection) |
 | `bootstrap-ci` | `bootstrap_cis is not None` and CI width `< 0.15` |
-| `shot-budget` | Quantum-only: `algo.shots >= 512` |
-| `kernel-spread` | Quantum-only: `algo.fidelity > 0.5` |
+| `shot-budget` | When `AlgoResult.shots` is set: `shots >= 512` |
+| `kernel-spread` | When `AlgoResult.fidelity` is set: `fidelity > 0.5` |
+| `hard-negatives` | Catalog matrix: every negative row uses a compound–disease pair **≠** the focal pair (`catalog_features._sample_catalog_negative_triplets`) |
+| `feature-leakage` | Catalog matrix: max \|Pearson(feature column, y)\| `< 0.999` on `build_features(selection)` |
 
-**Still RNG-seeded (16, labeled SIM in UI):**
+Classical runs omit the two quantum guards (they stay RNG). Default `HETQML_FEATURE_MATRIX_SOURCE=catalog` adds `hard-negatives` + `feature-leakage`; `synthetic` keeps those two RNG as well.
+
+**Still RNG-seeded (remainder, labeled SIM in UI):**
 
 | Guard | Why still synthetic |
 |---|---|
 | `ancestry-balance`, `equity-flag` | Need sample-level ancestry metadata not in feature matrix |
-| `hard-negatives` | Need curated negative compound-disease pairs |
-| `feature-leakage` | Label-collision check not yet implemented |
+| `negative-ratio` | Prereg ≥1:5 hard:positive ratio not asserted against catalog balance |
 | `lodo`, `loco` | Require additional leave-one-out CV runs |
 | `multi-seed` | Requires re-running with different RNG seeds |
 | `reviewer-blind` | Workflow property, no ML assertion possible |
 | `time-split` | Feature matrix has no temporal metadata |
 | `unit-tests` | CI-asserted, not runtime-asserted |
-| Others (7) | Require infrastructure or external metadata not yet available |
+| `leakage-anchor`, `degree-correction`, `path-length-cap` | Need held-out metapath / DWPC-style features not represented in the 8-D catalog row |
+| `quantum-zne`, `readout-mit` | Need runtime flags from the quantum stack not wired into guard dict |
+
+When every guard above is still RNG (full stack with catalog + quantum fields), **14** of **23** guards use the RNG scaffold; classical + catalog leaves **16** RNG if `shots` / `fidelity` are unset.
+
+**Implementation:** `jobs/runner.py::_real_guard_states` + `_integrity_guards`; catalog checks in `ml/catalog_features.py`.
 
 ---
 

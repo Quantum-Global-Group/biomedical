@@ -8,6 +8,8 @@ import pytest
 from hetqml_api.ml.algorithms import score_feature_rows_classical
 from hetqml_api.ml.catalog_features import (
     catalog_feature_row,
+    catalog_negatives_exclude_focal_pair,
+    max_abs_pearson_feature_target_correlation,
     metaedge_code_from_selection,
     try_build_catalog_feature_matrix,
 )
@@ -108,4 +110,35 @@ def test_build_features_for_candidates_catalog() -> None:
     ]
     x = build_features_for_candidates(sel, pairs)
     assert x.shape == (2, 8)
+
+
+def test_catalog_negatives_exclude_focal_pair_many_seeds() -> None:
+    sel = Selection(
+        disease="Hypertension-attributed ESKD",
+        compound="Inaxaplin",
+        gene="APOL1",
+        metaedge="CtD · Compound–treats–Disease",
+    )
+    for seed in range(0, 50):
+        ok = catalog_negatives_exclude_focal_pair(sel, n_samples=200, seed=seed)
+        assert ok is True
+
+
+def test_max_abs_pearson_feature_target_correlation() -> None:
+    x = np.array([[0.0, 1.0], [1.0, 0.0], [0.5, 0.5]], dtype=np.float64)
+    y = np.array([0, 1, 0], dtype=np.int64)
+    r = max_abs_pearson_feature_target_correlation(x, y)
+    assert 0.0 <= r <= 1.0
+    fm = build_features(
+        Selection(
+            disease="Hypertension-attributed ESKD",
+            compound="Inaxaplin",
+            gene="APOL1",
+            metaedge="CtD · Compound–treats–Disease",
+        ),
+        n_samples=200,
+    )
+    if fm.source == "catalog":
+        r2 = max_abs_pearson_feature_target_correlation(fm.X, fm.y)
+        assert r2 < 0.999
 
