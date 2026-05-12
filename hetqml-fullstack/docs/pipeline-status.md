@@ -7,23 +7,23 @@
 
 ## Executive Summary
 
-The dashboard runs a genuine ML cross-validation pipeline (classical, hybrid-quantum, IBM-Quantum) on a **deterministic synthetic feature matrix**. All statistical outputs — fold scores, calibration bins, bootstrap CIs, Brier score, ECE — are mathematically real computations, but they operate on Gaussian noise rather than actual Hetionet metapath features. Every synthetic value in the UI is labeled with a provenance pill (● real / ○ synthetic); no synthetic number is presented without disclosure.
+The dashboard runs a genuine ML cross-validation pipeline (classical, hybrid-quantum, IBM-Quantum). **By default** (`HETQML_FEATURE_MATRIX_SOURCE` unset or `catalog`) training features are **Hetionet-informed**: published Hetionet v1.0 metaedge edge totals plus bundled catalog attributes (DrugBank / DOID / gene categories, FDA flag, PubChem CID proxy), with a binary label for whether a row is the focal compound–disease pair versus a random catalog pair. Set `HETQML_FEATURE_MATRIX_SOURCE=synthetic` to restore the legacy Gaussian demo matrix. All statistical outputs — fold scores, calibration bins, bootstrap CIs, Brier score, ECE — are mathematically real computations on whichever matrix is active. Per-pair **DWPC** values from the full Hetionet graph are **not** bundled here yet; that remains future work (`hybrid-qml-kg-poc` ingestion path).
 
 ---
 
 ## Layer-by-Layer Status
 
-### 1 · Feature Data — SYNTHETIC (highest priority for a paper)
+### 1 · Feature Data — CATALOG (Hetionet-informed) · DWPC still future
 
 | Item | Status |
 |---|---|
-| `build_features()` in `ml/features.py` | Gaussian RNG seeded by selection hash — **not real Hetionet data** |
-| 8 feature names (`metapath_CbGaD`, `ecfp_density`, …) | Cosmetic labels only; values are `rng.multivariate_normal()` |
-| `build_features_for_candidates()` | Same synthetic construction per candidate pair; used only to seed UMAP |
+| `build_features()` in `ml/features.py` | **Default:** `ml/catalog_features.py` — log-scaled **Hetionet v1.0 metaedge edge totals** (`catalog.METAEDGES`) + catalog fields (FDA, therapeutic class, disease/gene category, PubChem CID proxy). Labels = focal compound–disease vs random catalog pairs. |
+| `HETQML_FEATURE_MATRIX_SOURCE=synthetic` | Legacy Gaussian `multivariate_normal` demo (previous behaviour). |
+| `build_features_for_candidates()` | Same catalog row builder per `(compound, disease)` when resolution succeeds; else hash-Gaussian fallback. |
 
-**Impact:** Every downstream metric (PR-AUC, calibration, bootstrap CI) is statistically valid but scientifically empty until `build_features()` is replaced with real Hetionet metapath feature extraction.
+**Impact:** CV metrics are no longer “pure noise” features, but rows are still **not** per-pair DWPCs from the live Hetionet export. Treat headline PR-AUC as **pipeline + catalog signal**, not validated repurposing evidence, until pairwise DWPC ingestion lands.
 
-**To fix:** Swap `build_features()` with a loader that pulls DWPC/metapath counts + PubChem/molecular descriptors from the Hetionet graph, keyed on `(compound, disease, gene, metaedge)`. The downstream scorers are agnostic to the data source.
+**Next:** Ship or compute a pairwise feature table (DWPC / integrated scores) keyed on `(compound, disease, gene, metaedge)` and swap the row builder to read it; keep `HETQML_FEATURE_MATRIX_SOURCE=synthetic` for regression tests if needed.
 
 ---
 
@@ -160,7 +160,7 @@ With 6 candidates and `n_neighbors=5`, UMAP will produce a meaningful 2D layout 
 |---|---|---|
 | 1 | `uv sync` under `apps/api` (installs `umap-learn`; lockfile committed) | Done |
 | 2 | Land observability, preregistration, e2e harness, ORCID/decision wiring | Done when merged |
-| 3 | Replace `build_features()` with real Hetionet metapath feature loader | 1–2 weeks |
+| 3 | Pairwise DWPC / integrated scores from full Hetionet graph (replace catalog row builder) | 1–2 weeks |
 | 4 | Replace synthetic candidates with real (compound, disease) pairs from graph query | 1 week |
 | 5 | ~~Wire `JobStore` to SQLite~~ — `SqliteJobStore` is live in `main.py` | Done |
 | 6 | Real p-values via McNemar / permutation test over CV folds | 2–3 days |
@@ -171,6 +171,6 @@ With 6 candidates and `n_neighbors=5`, UMAP will produce a meaningful 2D layout 
 
 ## What Can Be Cited in a Paper Now
 
-- **Can cite:** PR-AUC, ROC-AUC, Brier score, ECE, bootstrap 95% CIs, per-fold CV scores — all computed from real cross-validation over the synthetic feature matrix. The pipeline infrastructure, guard framework, and calibration methodology are all sound.
-- **Cannot cite:** Any specific metric value as evidence of drug-repurposing signal, since the feature matrix is synthetic Gaussian data. Trust scorecard clinical/mechanism/baseline axes. Statistical comparison p-values. Candidate rankings or evidence paths.
-- **Must disclose:** That feature data is a deterministic synthetic proxy for Hetionet metapath features, and that the dashboard is a pipeline prototype, not a validated repurposing engine.
+- **Can cite (catalog mode):** CV methodology, calibration, bootstrap CIs, and that feature rows include **published Hetionet v1.0 metaedge totals** and curated catalog identifiers. Do **not** claim per-compound–disease DWPCs without the pairwise table.
+- **Cannot cite:** Fine-grained repurposing effect sizes from DWPCs not yet in this repo. Trust scorecard clinical/mechanism/baseline axes. Statistical comparison p-values. Candidate rankings or evidence paths (still synthetic in §3).
+- **Must disclose:** Synthetic mode when enabled; in catalog mode, disclose that edge totals are graph-level aggregates, not per-pair path counts from a live Neo4j pull.

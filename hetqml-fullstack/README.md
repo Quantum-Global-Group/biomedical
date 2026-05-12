@@ -30,6 +30,7 @@ The web app reads `NEXT_PUBLIC_API_URL` (browser) and `API_INTERNAL_URL` (server
 - Save **API token + CRN** in **Settings** (same instance you open in the IBM Quantum Platform). The runner uses **`channel=ibm_quantum_platform`**, your **CRN as `instance=`**, and **`Settings → Pipeline/Quantum → Default backend`** (`defaultBackend`, e.g. `ibm_torino`) when picking the QPU (falls back to **least_busy** real hardware if that name is unavailable).
 - After a hardware job, check **uvicorn logs** for `IBM Quantum kernel:` (backend, circuit count, **`runtime_job_id`**) and the job **result notes** for **“IBM Runtime job id (Workloads UI)”** — search that id in **Quantum Platform → Workloads**. Clear console filters (instance / region / user) if you do not see it.
 - Optional API env: **`HETQML_QUANTUM_HW_SAMPLES`** (integer, min **25**, max **60**) caps how many rows feed the QK Gram matrix on **IBM only**, reducing circuit count for a smaller smoke run.
+- Feature matrix: **`HETQML_FEATURE_MATRIX_SOURCE`** — `catalog` (default: Hetionet v1.0 metaedge totals + bundled catalog attributes; see `docs/pipeline-status.md` §1) or `synthetic` (legacy Gaussian demo).
 
 ## Tests
 
