@@ -1,6 +1,6 @@
 # HetQML Pipeline Status — What's Real vs Synthetic
 
-**Last updated:** 2026-05-12 (repo hygiene: umap lockfile, persistence doc, ORCID/types)
+**Last updated:** 2026-05-12 (job-store wiring test, persistence §7 clarity)
 **Branch:** main (pipeline doc tracks behaviour, not a fixed SHA)
 
 ---
@@ -8,6 +8,8 @@
 ## Executive Summary
 
 The dashboard runs a genuine ML cross-validation pipeline (classical, hybrid-quantum, IBM-Quantum). **By default** (`HETQML_FEATURE_MATRIX_SOURCE` unset or `catalog`) training features are **Hetionet-informed**: published Hetionet v1.0 metaedge edge totals plus bundled catalog attributes (DrugBank / DOID / gene categories, FDA flag, PubChem CID proxy), with a binary label for whether a row is the focal compound–disease pair versus a random catalog pair. Set `HETQML_FEATURE_MATRIX_SOURCE=synthetic` to restore the legacy Gaussian demo matrix. All statistical outputs — fold scores, calibration bins, bootstrap CIs, Brier score, ECE — are mathematically real computations on whichever matrix is active. Per-pair **DWPC** values from the full Hetionet graph are **not** bundled here yet; that remains future work (`hybrid-qml-kg-poc` ingestion path).
+
+**Persistence:** In production and local `pnpm dev:api`, completed **jobs** are stored in **SQLite** via `SqliteJobStore` (`apps/api/src/hetqml_api/main.py`) on the same connection as decisions, notes, settings, and preregistration — **not** an in-memory job store. Pytest’s shared `client` fixture swaps in `InMemoryJobStore` only to keep HTTP tests fast (see `tests/conftest.py` and `tests/test_app_job_store_wiring.py`).
 
 ---
 
@@ -121,12 +123,14 @@ The dashboard runs a genuine ML cross-validation pipeline (classical, hybrid-qua
 
 | Store | Backend | Survives restart? |
 |---|---|---|
-| Decision history | SQLite (`sqlite.py`) | ✓ Yes |
+| Decision history | SQLite (`persistence/sqlite.py`) | ✓ Yes |
 | Settings / profile | SQLite | ✓ Yes |
-| Job results | SQLite (`SqliteJobStore` in `main.py`) | ✓ Yes |
+| Job results | SQLite **`SqliteJobStore`** (`main.py` → `open_connection` + `init_schema`) | ✓ Yes |
 | Preregistration docs | SQLite | ✓ Yes |
 
-**Tests:** some API tests still construct `InMemoryJobStore` for isolation; the running FastAPI app uses `SqliteJobStore` with the same connection as decisions/settings.
+**Production / `create_app`:** `SqliteJobStore` shares `app.state.sqlite_conn` with `SqliteDecisionStore`, `SqliteNoteStore`, `SqliteSettingsStore`, etc. Jobs survive `uvicorn --reload` and process restarts as long as `DATA_DIR` / `sqlite_filename` point at the same file (defaults under `apps/api/.data/`).
+
+**Tests:** `tests/test_sqlite_job_store.py` covers create/list/get/update and reconnect survival. `tests/test_app_job_store_wiring.py` asserts the **default** app factory attaches `SqliteJobStore` (not in-memory). `tests/conftest.py` replaces `app.state.job_store` with `InMemoryJobStore` for the async `client` fixture so route tests stay fast; `test_preregistration.py` also builds an in-memory store in isolation. **`InMemoryJobStore`** remains in `jobs/store.py` as a test harness only — it is **not** used in the live `create_app` path.
 
 ---
 
@@ -161,7 +165,7 @@ With 6 candidates and `n_neighbors=5`, UMAP will produce a meaningful 2D layout 
 | 2 | Land observability, preregistration, e2e harness, ORCID/decision wiring | Done when merged |
 | 3 | Pairwise DWPC / integrated scores from full Hetionet graph (replace catalog row builder) | 1–2 weeks |
 | 4 | Replace synthetic candidates with real (compound, disease) pairs from graph query | Partially done — catalog slice + classical scores; full DWPC graph query remains |
-| 5 | ~~Wire `JobStore` to SQLite~~ — `SqliteJobStore` is live in `main.py` | Done |
+| 5 | Job persistence: SQLite prod wiring + tests + doc (§7 / `test_app_job_store_wiring`) | Done |
 | 6 | Real p-values via McNemar / permutation test over CV folds | 2–3 days |
 | 7 | Clinical + mechanism trust axes from OpenTargets / GO overlap | 1–2 weeks |
 | 8 | Remaining integrity guards (ancestry, leakage, hard-negatives) | 2–4 weeks |

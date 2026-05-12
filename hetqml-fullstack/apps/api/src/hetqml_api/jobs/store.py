@@ -1,8 +1,9 @@
 """Job storage abstraction.
 
-The interface keeps job state behind a Protocol so swapping the in-memory
-implementation for Postgres later is a single-file change. v1 deliberately
-ships only the in-memory variant.
+``JobStore`` is a Protocol so tests can swap implementations. Production uses
+``SqliteJobStore`` in ``hetqml_api.persistence.sqlite`` (wired from
+``create_app`` in ``main.py``). ``InMemoryJobStore`` here is for fast unit tests
+and fixtures that override ``app.state.job_store``.
 """
 
 from __future__ import annotations

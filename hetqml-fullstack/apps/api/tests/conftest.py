@@ -12,8 +12,11 @@ from hetqml_api.settings import Settings
 @pytest.fixture
 def app(tmp_path):
     """Fresh app per test with:
-    - in-memory job store so polling tests stay fast and don't fight a
-      real sqlite file across cases;
+    - **Job store override:** ``create_app`` normally wires ``SqliteJobStore``
+      (same DB as decisions/settings — see ``main.py``). We replace
+      ``app.state.job_store`` with ``InMemoryJobStore`` so HTTP polling tests
+      stay fast and don't contend on one sqlite file across parallel cases.
+      ``tests/test_app_job_store_wiring.py`` locks the default Sqlite wiring.
     - synthetic-only runner that skips the (slow) real ML dispatcher so
       job-lifecycle tests still complete in milliseconds. Tests that
       exercise real algorithms instantiate their own Runner.
