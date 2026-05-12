@@ -46,9 +46,21 @@ async function saveSettingsLite(draft: UserSettings): Promise<UserSettings> {
   return draft;
 }
 
-/** Lite stub for validateIbmConnection — there's no FastAPI to call
- * IBM Quantum from, but we mark the connection as validated locally so
- * the form's "validated" pill flips on. Persisted to localStorage too. */
+/** Lite stub for validateIbmConnection.
+ *
+ * Honesty fix: previously this flipped `validated: true` so the form's green
+ * "✓ Connected" pill lit up — but no IBM round-trip ever happened, so the
+ * user could trust a fake green light. Now the lite path:
+ *
+ *   - Persists the credential edits to localStorage (so refresh keeps them).
+ *   - **Leaves `validated: false`** because nothing was actually checked.
+ *   - Tags `instanceName` with a `(demo · not verified)` suffix when blank,
+ *     so the row never reads as "verified instance".
+ *
+ * The UI also surfaces a dedicated "lite mode — validation unavailable"
+ * notice next to the button so the disabled state is explained, not just
+ * silent.
+ */
 async function validateIbmConnectionLite(
   draft: UserSettings,
 ): Promise<UserSettings> {
@@ -56,10 +68,10 @@ async function validateIbmConnectionLite(
     ...draft,
     ibmConnection: {
       ...draft.ibmConnection,
-      validated: true,
+      validated: false,
       planTier: draft.ibmConnection.planTier ?? "demo",
       instanceName:
-        draft.ibmConnection.instanceName ?? "hetqml-lite (demo)",
+        draft.ibmConnection.instanceName ?? "hetqml-lite (demo · not verified)",
     },
   };
   return saveSettingsLite(updated);
@@ -1106,6 +1118,17 @@ function ProfilePanel({
             onChange={(e) => onChange({ contactEmail: e.target.value })}
           />
         </div>
+        <div className="settings-row">
+          <div className="settings-label">ORCID iD</div>
+          <input
+            className="settings-input"
+            type="text"
+            inputMode="numeric"
+            placeholder="0000-0000-0000-0000"
+            value={value.orcid}
+            onChange={(e) => onChange({ orcid: e.target.value })}
+          />
+        </div>
       </div>
       <div className="panel-footer">
         <span>profile · server</span>
@@ -1344,9 +1367,9 @@ function QuantumPanel({
               onChange({ shotsPerCircuit: Number(e.target.value) })
             }
           >
-            <option value="4096">4,096 (fast)</option>
+            <option value="4096">4,096 (default)</option>
             <option value="8192">8,192</option>
-            <option value="16384">16,384 (default)</option>
+            <option value="16384">16,384</option>
             <option value="32768">32,768 (max)</option>
           </select>
         </div>
@@ -1728,19 +1751,37 @@ function IbmConnectionPanel({
                   fontSize: 11,
                   color: validateError
                     ? "var(--sienna)"
-                    : value.validated
-                      ? "var(--green)"
-                      : "var(--faint)",
+                    : lite
+                      ? "var(--gold)"
+                      : value.validated
+                        ? "var(--green)"
+                        : "var(--faint)",
                   fontFamily: "monospace",
                 }}
               >
                 {validateError
                   ? `— ${validateError}`
-                  : value.validated
-                    ? `— validated · ${value.planTier ?? "no plan"}`
-                    : "— not validated"}
+                  : lite
+                    ? "— lite mode · NOT validated against IBM (no FastAPI to call)"
+                    : value.validated
+                      ? `— validated · ${value.planTier ?? "no plan"}`
+                      : "— not validated"}
               </span>
             </div>
+            {lite ? (
+              <span
+                style={{
+                  fontSize: 11,
+                  color: "var(--faint)",
+                  fontFamily: "monospace",
+                  wordBreak: "break-word",
+                }}
+              >
+                Validate stores credentials in your browser only. Hetionet Full
+                runs a real IBM Quantum probe via FastAPI before flipping the
+                connected pill — switch to the linked build to verify.
+              </span>
+            ) : null}
             {lite || (!smokeError && !smokeResult) ? null : (
               <span
                 style={{

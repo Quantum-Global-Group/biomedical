@@ -43,6 +43,16 @@ class Settings(BaseSettings):
     # point at httpx.MockTransport.
     pubchem_base_url: str = "https://pubchem.ncbi.nlm.nih.gov/rest/pug"
     molecule_cache_subdir: str = "pubchem-sdf"
+    # Cache GC bounds — 0 disables that bound. The molecule router runs a
+    # cheap opportunistic sweep on cache miss (throttled to once an hour),
+    # deleting entries older than `pubchem_cache_max_age_days` first, then
+    # evicting oldest entries until total bytes drop below
+    # `pubchem_cache_max_size_mb * 1MB`. Sensible defaults keep the cache
+    # bounded without surprising operators; override with env vars
+    # `PUBCHEM_CACHE_MAX_AGE_DAYS` / `PUBCHEM_CACHE_MAX_SIZE_MB`.
+    pubchem_cache_max_age_days: int = 30
+    pubchem_cache_max_size_mb: int = 256
+    pubchem_cache_gc_interval_seconds: int = 3600
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="", case_sensitive=False)
 

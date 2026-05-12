@@ -1,7 +1,7 @@
 # HetQML Pipeline Status — What's Real vs Synthetic
 
-**Last updated:** 2026-05-12
-**Branch:** main @ eecdf4a (Phase 2 + Phase 3 commit)
+**Last updated:** 2026-05-12 (repo hygiene: umap lockfile, persistence doc, ORCID/types)
+**Branch:** main (pipeline doc tracks behaviour, not a fixed SHA)
 
 ---
 
@@ -124,21 +124,20 @@ The dashboard runs a genuine ML cross-validation pipeline (classical, hybrid-qua
 |---|---|---|
 | Decision history | SQLite (`sqlite.py`) | ✓ Yes |
 | Settings / profile | SQLite | ✓ Yes |
-| Job results | **In-memory** (`InMemoryJobStore`) | ✗ Lost on restart |
-| Preregistration docs | SQLite (new module) | ✓ Yes |
+| Job results | SQLite (`SqliteJobStore` in `main.py`) | ✓ Yes |
+| Preregistration docs | SQLite | ✓ Yes |
 
-**Job persistence gap:** Wire `JobStore` to the existing SQLite layer (~50 lines). The `DecisionStore` pattern is the template.
+**Tests:** some API tests still construct `InMemoryJobStore` for isolation; the running FastAPI app uses `SqliteJobStore` with the same connection as decisions/settings.
 
 ---
 
 ### 8 · UMAP Embedding
 
-`_embedding()` in `runner.py` tries `umap-learn` first; falls back to hash-based coordinates silently.
+`_embedding()` in `runner.py` tries `umap-learn` first; falls back to hash-based coordinates silently when the import fails.
 
-**Current state: UMAP NOT active** — `umap-learn` is declared in `pyproject.toml` but not yet installed in the venv.
+**Current state:** With `umap-learn` installed (`cd hetqml-fullstack/apps/api && uv sync`), the runner uses a real UMAP projection of candidate feature rows. Commit `uv.lock` so CI and fresh clones get the dependency.
 
 ```bash
-# One-time fix:
 cd hetqml-fullstack/apps/api && uv sync
 ```
 
@@ -159,11 +158,11 @@ With 6 candidates and `n_neighbors=5`, UMAP will produce a meaningful 2D layout 
 
 | Priority | Task | Effort |
 |---|---|---|
-| 1 | `uv sync` to install `umap-learn` | 1 min |
-| 2 | Commit remaining uncommitted work (observability, preregistration, e2e tests) | 15 min |
+| 1 | `uv sync` under `apps/api` (installs `umap-learn`; lockfile committed) | Done |
+| 2 | Land observability, preregistration, e2e harness, ORCID/decision wiring | Done when merged |
 | 3 | Replace `build_features()` with real Hetionet metapath feature loader | 1–2 weeks |
 | 4 | Replace synthetic candidates with real (compound, disease) pairs from graph query | 1 week |
-| 5 | Wire `JobStore` to SQLite for restart-safe job persistence | 1 day |
+| 5 | ~~Wire `JobStore` to SQLite~~ — `SqliteJobStore` is live in `main.py` | Done |
 | 6 | Real p-values via McNemar / permutation test over CV folds | 2–3 days |
 | 7 | Clinical + mechanism trust axes from OpenTargets / GO overlap | 1–2 weeks |
 | 8 | Remaining integrity guards (ancestry, leakage, hard-negatives) | 2–4 weeks |

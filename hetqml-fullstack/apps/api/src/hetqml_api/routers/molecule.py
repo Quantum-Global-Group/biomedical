@@ -23,6 +23,8 @@ in the detail message.
 from __future__ import annotations
 
 import asyncio
+import logging
+import time
 from pathlib import Path
 
 import httpx
@@ -30,6 +32,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 
 from hetqml_api.settings import Settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/molecule", tags=["molecule"])
 
@@ -39,6 +43,12 @@ router = APIRouter(prefix="/molecule", tags=["molecule"])
 # in-process dict is sufficient since the API runs as a single process
 # in this deployment.
 _FETCH_LOCKS: dict[int, asyncio.Lock] = {}
+
+# Throttle GC sweeps to once per `pubchem_cache_gc_interval_seconds`. The
+# cache miss path schedules a fire-and-forget GC task when the throttle has
+# expired — no extra infrastructure (cron / scheduled job) required.
+_LAST_GC_AT: float = 0.0
+_GC_LOCK = asyncio.Lock()
 
 
 def _cache_path(cache_dir: Path, cid: int) -> Path:
@@ -94,7 +104,124 @@ async def _resolve_sdf(
         tmp = target.with_suffix(".sdf.tmp")
         tmp.write_text(sdf, encoding="utf-8")
         tmp.replace(target)
-        return sdf
+    # Outside the per-CID lock — schedule a sweep without blocking the
+    # current response. `maybe_schedule_cache_gc` no-ops when the GC
+    # interval has not elapsed.
+    maybe_schedule_cache_gc(settings)
+    return sdf
+
+
+# --- Cache GC ------------------------------------------------------------
+
+
+def maybe_schedule_cache_gc(settings: Settings) -> None:
+    """Fire-and-forget a GC sweep if the throttle has elapsed.
+
+    Safe to call from any async handler; uses the running loop's
+    `create_task`. When called outside an async context (e.g. tests
+    instantiating `_resolve_sdf` directly) it falls through silently.
+    """
+
+    global _LAST_GC_AT
+    now = time.monotonic()
+    interval = max(0, settings.pubchem_cache_gc_interval_seconds)
+    if interval and now - _LAST_GC_AT < interval:
+        return
+    _LAST_GC_AT = now
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    loop.create_task(_run_cache_gc(settings))
+
+
+async def _run_cache_gc(settings: Settings) -> None:
+    """Wrapper that serializes GC and offloads the disk walk to a thread."""
+    if _GC_LOCK.locked():
+        return
+    async with _GC_LOCK:
+        try:
+            await asyncio.to_thread(prune_pubchem_cache, settings)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("PubChem cache GC failed: %s", exc)
+
+
+def prune_pubchem_cache(settings: Settings) -> dict[str, int]:
+    """Walk the PubChem SDF cache and prune by age then by total size.
+
+    Returns a small dict suitable for log lines or test assertions:
+      `{"checked": int, "evicted_age": int, "evicted_size": int,
+        "bytes_after": int}`.
+
+    Bounds with a value of ``0`` are treated as "no limit" — a fresh
+    install with both knobs zero performs no eviction.
+    """
+
+    cache_dir = settings.molecule_cache_dir
+    if not cache_dir.exists():
+        return {"checked": 0, "evicted_age": 0, "evicted_size": 0, "bytes_after": 0}
+    max_age_days = max(0, settings.pubchem_cache_max_age_days)
+    max_size_bytes = max(0, settings.pubchem_cache_max_size_mb) * 1024 * 1024
+    cutoff = time.time() - max_age_days * 86400 if max_age_days else 0
+
+    entries: list[tuple[Path, float, int]] = []
+    for path in cache_dir.glob("*.sdf"):
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        entries.append((path, stat.st_mtime, stat.st_size))
+
+    evicted_age = 0
+    if cutoff:
+        keep: list[tuple[Path, float, int]] = []
+        for entry in entries:
+            path, mtime, _size = entry
+            if mtime < cutoff:
+                try:
+                    path.unlink()
+                    evicted_age += 1
+                except OSError:
+                    keep.append(entry)
+            else:
+                keep.append(entry)
+        entries = keep
+
+    evicted_size = 0
+    total_bytes = sum(size for _, _, size in entries)
+    if max_size_bytes and total_bytes > max_size_bytes:
+        # Oldest-first eviction (LRU-by-mtime) until we drop under the cap.
+        entries.sort(key=lambda e: e[1])
+        for path, _mtime, size in entries:
+            if total_bytes <= max_size_bytes:
+                break
+            try:
+                path.unlink()
+                evicted_size += 1
+                total_bytes -= size
+            except OSError:
+                continue
+
+    summary = {
+        "checked": len(entries) + evicted_age,
+        "evicted_age": evicted_age,
+        "evicted_size": evicted_size,
+        "bytes_after": max(0, total_bytes),
+    }
+    if evicted_age or evicted_size:
+        logger.info(
+            "PubChem cache GC: pruned %d by age, %d by size (now %d bytes)",
+            evicted_age,
+            evicted_size,
+            summary["bytes_after"],
+        )
+    return summary
+
+
+def reset_gc_throttle_for_tests() -> None:
+    """Reset the module-level throttle so tests can trigger consecutive GCs."""
+    global _LAST_GC_AT
+    _LAST_GC_AT = 0.0
 
 
 @router.get("/{cid}", response_class=PlainTextResponse)

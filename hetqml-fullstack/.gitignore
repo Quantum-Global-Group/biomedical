@@ -53,6 +53,11 @@ __pycache__/
 coverage/
 htmlcov/
 
+# Playwright (apps/web) — reports live under apps/web/, not only e2e/
+apps/web/test-results/
+apps/web/playwright-report/
+apps/web/playwright/.cache/
+
 .fly/
 .data/
 *.sqlite

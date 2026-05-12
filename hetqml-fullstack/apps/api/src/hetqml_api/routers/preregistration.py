@@ -5,12 +5,24 @@ states (H1, H1b, H2, H3) from
 `hybrid-qml-kg-poc/preregistration/osf_preregistration_v1.md` §1.3 + §8.1.
 The headline-mode Experiment view in the dashboard consumes this.
 
-Until the GPU bootstrap-CI run produces `bootstrap_ci_analysis.md`, the
-endpoint returns `available=False` with the four hypotheses marked
-`pending_bootstrap` (H1/H1b) or `pending_hardware` (H2/H3). When the
-file exists on disk, the v1 stub returns metadata + still-pending
-states (full markdown parsing is intentionally deferred — the format
-will be re-checked once a real report file lands).
+When `bootstrap_ci_analysis.md` does not exist the endpoint returns
+`available=False` with the four hypotheses marked `pending_bootstrap`
+(H1/H1b) or `pending_hardware` (H2/H3).
+
+When the file exists, the markdown is parsed (see
+`hetqml_api.preregistration.parser`) and:
+  * H1 / H1b switch to `supported` / `not_supported` reflecting their
+    paired-bootstrap conjunction status, with `point` / `ci_low` /
+    `ci_high` populated from the parsed table (the headline CI is taken
+    from the *narrowest* baseline window so the dashboard surfaces a
+    conservative effect estimate).
+  * H2 / H3 stay `pending_hardware` — those depend on the IBM Torino
+    runbook, not the GPU bootstrap report.
+
+When a section is present but malformed (no baseline table, missing
+columns, etc.) the parser returns `None` for that hypothesis and the
+endpoint falls back to the pending placeholder — partial files don't
+poison the response.
 
 Configure the source path via `BOOTSTRAP_CI_PATH` env var (Settings
 field `bootstrap_ci_path`).
@@ -18,17 +30,25 @@ field `bootstrap_ci_path`).
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends
 
 from hetqml_api.deps import get_app_settings
+from hetqml_api.preregistration import (
+    BootstrapParseResult,
+    parse_bootstrap_ci_report,
+)
 from hetqml_api.schemas import (
+    BootstrapCIReport,
     HypothesisStatus,
     PreregistrationStatus,
 )
 from hetqml_api.settings import Settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/preregistration", tags=["preregistration"])
 
@@ -109,16 +129,61 @@ def _resolve_source_path(settings: Settings) -> Path:
     return path if path.is_absolute() else path.resolve()
 
 
+def _hypothesis_from_report(
+    base: HypothesisStatus,
+    report: BootstrapCIReport | None,
+) -> HypothesisStatus:
+    """Promote a pending hypothesis to supported/not_supported when the
+    parser produced a real :class:`BootstrapCIReport` for it.
+
+    Headline `point`/`ci_low`/`ci_high` come from the *narrowest*
+    baseline window so the dashboard reads conservative. A
+    "narrowest window" tie-break by absolute `point` keeps the choice
+    deterministic across re-renders.
+    """
+
+    if report is None:
+        return base
+    if not report.baselines:
+        return base
+    narrowest = min(
+        report.baselines,
+        key=lambda b: (b.ci_high - b.ci_low, -abs(b.point)),
+    )
+    status = "supported" if report.conjunction_supported else "not_supported"
+    return base.model_copy(
+        update={
+            "status": status,
+            "point": round(narrowest.point, 4),
+            "ci_low": round(narrowest.ci_low, 4),
+            "ci_high": round(narrowest.ci_high, 4),
+            "supported": report.conjunction_supported,
+        }
+    )
+
+
+def _parse_or_empty(source: Path) -> BootstrapParseResult:
+    """Read + parse the artifact; defensive on IO so a transient permission
+    error never surfaces as a 500."""
+
+    try:
+        text = source.read_text(encoding="utf-8")
+    except OSError as exc:
+        logger.warning("bootstrap_ci read failed (%s): %s", source, exc)
+        return BootstrapParseResult(h1=None, h1b=None, git_commit=None, run_date=None)
+    return parse_bootstrap_ci_report(text)
+
+
 @router.get("/status", response_model=PreregistrationStatus)
 async def get_preregistration_status(
     settings: Settings = Depends(get_app_settings),
 ) -> PreregistrationStatus:
     """Return the current preregistration / bootstrap-CI status.
 
-    v1 stub: when the source file exists, returns metadata + the same
-    pending statuses (parsing is deferred until a real
-    bootstrap_ci_analysis.md lands and the format stabilizes). When the
-    file does not exist, returns `available=False`.
+    Parses ``bootstrap_ci_analysis.md`` when it exists; otherwise returns
+    ``available=False`` with all four hypotheses pending. A present-but-
+    unparseable file is treated like a present-but-not-yet-tabulated file:
+    ``available=True`` with H1/H1b still pending.
     """
     source = _resolve_source_path(settings)
     available = source.is_file()
@@ -133,13 +198,26 @@ async def get_preregistration_status(
         except OSError:
             captured_utc = None
 
+    parsed = _parse_or_empty(source) if available else BootstrapParseResult(
+        h1=None, h1b=None, git_commit=None, run_date=None
+    )
+
+    pending = _pending_hypotheses()
+    promoted: list[HypothesisStatus] = []
+    for hypothesis in pending:
+        if hypothesis.id == "H1":
+            promoted.append(_hypothesis_from_report(hypothesis, parsed.h1))
+        elif hypothesis.id == "H1b":
+            promoted.append(_hypothesis_from_report(hypothesis, parsed.h1b))
+        else:
+            promoted.append(hypothesis)
+
     return PreregistrationStatus(
         available=available,
         source_path=str(source) if available else str(settings.bootstrap_ci_path),
+        git_commit=parsed.git_commit,
         captured_utc=captured_utc,
-        hypotheses=_pending_hypotheses(),
-        # h1 / h1b stay None until parsing lands. The headline UI knows to
-        # render "pending bootstrap CI run" until both go non-null.
-        h1=None,
-        h1b=None,
+        hypotheses=promoted,
+        h1=parsed.h1,
+        h1b=parsed.h1b,
     )

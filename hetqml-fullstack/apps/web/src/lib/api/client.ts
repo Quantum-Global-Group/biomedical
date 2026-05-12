@@ -709,6 +709,8 @@ export interface DecisionCreateInput {
   pairKey: string;
   verdict: DecisionVerdict;
   reviewer: string;
+  /** Optional ORCID iD — mirrors API `reviewer_orcid`. */
+  reviewerOrcid?: string | null;
   sessionId: string;
   selection: DecisionSelection;
   runPath: DecisionRunPath;
@@ -733,6 +735,7 @@ export interface DecisionRecord {
   pairKey: string;
   verdict: DecisionVerdict;
   reviewer: string;
+  reviewerOrcid?: string | null;
   sessionId: string;
   selection: DecisionSelection;
   runPath: DecisionRunPath;
@@ -809,6 +812,7 @@ export interface ProfileSettings {
   role: string;
   organization: string;
   contactEmail: string;
+  orcid: string;
 }
 export interface AppearanceSettings {
   theme: "light" | "dark" | "auto";

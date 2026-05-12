@@ -138,7 +138,7 @@ async def test_get_default_settings_when_unset(client):
     # Schema defaults round-trip:
     assert body["appearance"]["theme"] == "dark"
     assert body["pipeline"]["defaultRunPath"] == "hybrid"
-    assert body["quantum"]["shotsPerCircuit"] == 16384
+    assert body["quantum"]["shotsPerCircuit"] == 4096
 
 
 async def test_put_settings_then_get_round_trips(client):

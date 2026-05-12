@@ -81,10 +81,10 @@ html[data-lite="true"] .sidebar {
   box-shadow: none;
 }
 
-/* Collapse control: align with top of sidebar padding; spacing before brand block. */
+/* Collapse control: under brand strip, centered with the nav column. */
 html[data-lite="true"] .sidebar .sidebar-header-row {
-  margin: 0 0 12px;
-  justify-content: flex-end;
+  margin: 10px 0 12px;
+  justify-content: center;
 }
 
 /* Brand stack — left-aligned type, icon tile, clear hierarchy (export used align-items: center). */

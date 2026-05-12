@@ -81,7 +81,7 @@ interface Props {
 
 export function QuantumCircuitSvgPanel({
   backend = "ibm_torino · cuStateVec sim",
-  shots = 16384,
+  shots = 4096,
   reps = 2,
 }: Props) {
   const cols = Math.max(...GATES.map((g) => g.col)) + 1;

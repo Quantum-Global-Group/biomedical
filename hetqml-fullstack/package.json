@@ -7,7 +7,10 @@
     "dev:api": "sh -c 'cd apps/api && uv run uvicorn hetqml_api.main:app --reload --host 0.0.0.0 --port \"${HETQML_API_PORT:-8000}\"'",
     "test:web": "pnpm --filter hetqml-web test",
     "test:api": "cd apps/api && uv run pytest",
+    "test:e2e": "pnpm --filter hetqml-web test:e2e",
     "test": "pnpm test:web && pnpm test:api",
+    "verify": "pnpm --filter hetqml-web typecheck && pnpm test:web && pnpm test:api",
+    "verify:lint": "pnpm --filter hetqml-web lint && pnpm verify",
     "build:web": "pnpm --filter hetqml-web build"
   },
   "packageManager": "pnpm@9.12.0"

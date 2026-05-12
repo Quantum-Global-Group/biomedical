@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from hetqml_api.jobs.runner import Runner
+from hetqml_api.observability import RequestIdMiddleware
 from hetqml_api.ops.provider import CannedOpsProvider
 from hetqml_api.persistence.sqlite import (
     SqliteDecisionStore,
@@ -51,6 +52,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     _hf_hub_re = r"^https://huggingface\.co$"
 
+    # Request-id middleware runs *inside* CORS so the echoed `X-Request-ID`
+    # header is part of the CORS-exposed response surface. Starlette applies
+    # middleware in reverse-add order, so CORS goes on last to wrap everything.
+    app.add_middleware(RequestIdMiddleware)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cfg.cors_origins,
@@ -60,6 +66,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["*"],
+        # `X-Request-ID` must be in `expose_headers` for browser JS to read it
+        # off `Response.headers` (CORS hides non-simple response headers by
+        # default). Support tooling needs this to mirror the id back to users.
+        expose_headers=["X-Request-ID"],
     )
 
     # Stash the resolved Settings on app.state so routers that need

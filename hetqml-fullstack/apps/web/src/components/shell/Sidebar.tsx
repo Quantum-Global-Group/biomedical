@@ -72,18 +72,6 @@ export function Sidebar({ active }: SidebarProps) {
 
   return (
     <aside className="sidebar">
-      <div className="sidebar-header-row">
-        <button
-          type="button"
-          className="sidebar-toggle"
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          aria-expanded={!collapsed}
-          aria-label="Toggle sidebar"
-          onClick={() => setCollapsed((c) => !c)}
-        >
-          ‹
-        </button>
-      </div>
       <div className="brand">
         <div className="brand-icon" aria-hidden>
           {isLiteMode() ? "◎" : null}
@@ -95,6 +83,18 @@ export function Sidebar({ active }: SidebarProps) {
           ) : null}
           <div className="brand-ver">{APP_RELEASE}</div>
         </div>
+      </div>
+      <div className="sidebar-header-row">
+        <button
+          type="button"
+          className="sidebar-toggle"
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-expanded={!collapsed}
+          aria-label="Toggle sidebar"
+          onClick={() => setCollapsed((c) => !c)}
+        >
+          ‹
+        </button>
       </div>
       <div className="section-label">Workflow</div>
       {WORKFLOW.map((item) => (

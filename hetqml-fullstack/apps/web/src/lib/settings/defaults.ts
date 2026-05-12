@@ -16,6 +16,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
     role: "",
     organization: "",
     contactEmail: "",
+    orcid: "",
   },
   appearance: {
     theme: "dark",
@@ -32,7 +33,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   },
   quantum: {
     defaultBackend: "ibm_torino",
-    shotsPerCircuit: 16384,
+    shotsPerCircuit: 4096,
     jobTimeoutSeconds: 1800,
     zneEnabled: true,
     pulseLevelAccess: false,
@@ -74,6 +75,7 @@ export const SETTINGS_LITE_DEMO: UserSettings = {
     role: "Space visitor",
     organization: "(Hugging Face demo)",
     contactEmail: "",
+    orcid: "",
   },
   ibmConnection: {
     apiToken: "",

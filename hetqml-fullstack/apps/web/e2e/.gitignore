@@ -1,0 +1,5 @@
+# Playwright artifacts (traces, screenshots, html report) — local-only.
+# CI uploads them as build artifacts so committing a copy is wasteful.
+test-results/
+playwright-report/
+playwright/.cache/

@@ -25,6 +25,7 @@ export const SETTINGS_FALLBACK: UserSettings = {
     role: "",
     organization: "",
     contactEmail: "",
+    orcid: "",
   },
   appearance: {
     theme: "dark",
@@ -41,7 +42,7 @@ export const SETTINGS_FALLBACK: UserSettings = {
   },
   quantum: {
     defaultBackend: "ibm_torino",
-    shotsPerCircuit: 16384,
+    shotsPerCircuit: 4096,
     jobTimeoutSeconds: 1800,
     zneEnabled: true,
     pulseLevelAccess: false,

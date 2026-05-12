@@ -106,13 +106,14 @@ input:focus-visible {
   color: var(--muted);
 }
 
-/* Sidebar collapse: export positions the toggle absolutely over the brand.
- * Dedicated header row keeps it top-right without overlapping the mark. */
+/* Sidebar collapse: export still defines an absolute toggle; we reset it to
+ * static and keep the control in a row under the brand, centered like the
+ * collapsed-rail nav icons. */
 .sidebar-header-row {
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
   align-items: center;
-  margin: 0 0 8px;
+  margin: 10px 0 12px;
 }
 
 .sidebar-toggle {
@@ -150,11 +151,7 @@ body.sidebar-collapsed .main {
   margin-left: 68px !important;
 }
 
-body.sidebar-collapsed .sidebar .sidebar-header-row {
-  justify-content: center;
-}
-
-/* Collapsed: rotate chevron only (toggle lives in `.sidebar-header-row`, not over the brand). */
+/* Collapsed: rotate chevron only (toggle sits under the brand row). */
 body.sidebar-collapsed .sidebar .sidebar-toggle {
   transform: rotate(180deg) !important;
 }

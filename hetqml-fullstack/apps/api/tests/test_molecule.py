@@ -91,3 +91,94 @@ async def test_get_molecule_sdf_rejects_non_positive_cid(tmp_path):
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get("/molecule/0")
     assert response.status_code == 400
+
+
+# --- Cache GC ----------------------------------------------------------
+
+
+def test_prune_pubchem_cache_evicts_old_entries(tmp_path):
+    """Files older than `pubchem_cache_max_age_days` are deleted; fresh
+    entries survive."""
+    import os
+    import time
+
+    from hetqml_api.routers.molecule import prune_pubchem_cache
+
+    settings = Settings(
+        allowed_origins="http://localhost:3000",
+        data_dir=tmp_path,
+        pubchem_cache_max_age_days=1,
+        pubchem_cache_max_size_mb=0,  # disable size bound for this test
+    )
+    cache_dir = settings.molecule_cache_dir
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    fresh = cache_dir / "111.sdf"
+    stale = cache_dir / "222.sdf"
+    fresh.write_text("x")
+    stale.write_text("y")
+    # Backdate `stale` by 5 days so it's well beyond the 1-day cutoff.
+    five_days_ago = time.time() - 5 * 86400
+    os.utime(stale, (five_days_ago, five_days_ago))
+
+    summary = prune_pubchem_cache(settings)
+
+    assert summary["evicted_age"] == 1
+    assert summary["evicted_size"] == 0
+    assert fresh.exists()
+    assert not stale.exists()
+
+
+def test_prune_pubchem_cache_evicts_oldest_when_over_size(tmp_path):
+    """When total bytes exceed `max_size_mb * 1MB`, oldest files are
+    evicted until under the cap."""
+    import os
+    import time
+
+    from hetqml_api.routers.molecule import prune_pubchem_cache
+
+    settings = Settings(
+        allowed_origins="http://localhost:3000",
+        data_dir=tmp_path,
+        pubchem_cache_max_age_days=0,  # disable age bound
+        pubchem_cache_max_size_mb=1,  # 1 MB cap
+    )
+    cache_dir = settings.molecule_cache_dir
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    # Three 600KB files = 1.8MB total → must evict at least one.
+    payload = "0" * (600 * 1024)
+    for i, name in enumerate(("a.sdf", "b.sdf", "c.sdf")):
+        path = cache_dir / name
+        path.write_text(payload)
+        # Stagger mtimes so eviction order is deterministic (a oldest).
+        backdate = time.time() - (3 - i) * 60
+        os.utime(path, (backdate, backdate))
+
+    summary = prune_pubchem_cache(settings)
+
+    assert summary["evicted_size"] >= 1
+    assert summary["bytes_after"] <= 1 * 1024 * 1024
+    # Oldest file (a.sdf) must be the first evicted.
+    assert not (cache_dir / "a.sdf").exists()
+    # Newest (c.sdf) survives.
+    assert (cache_dir / "c.sdf").exists()
+
+
+def test_prune_pubchem_cache_handles_missing_dir(tmp_path):
+    """No cache dir on disk → GC is a no-op, doesn't raise."""
+    from hetqml_api.routers.molecule import prune_pubchem_cache
+
+    settings = Settings(
+        allowed_origins="http://localhost:3000",
+        data_dir=tmp_path / "does-not-exist",
+        pubchem_cache_max_age_days=30,
+        pubchem_cache_max_size_mb=10,
+    )
+    summary = prune_pubchem_cache(settings)
+    assert summary == {
+        "checked": 0,
+        "evicted_age": 0,
+        "evicted_size": 0,
+        "bytes_after": 0,
+    }
