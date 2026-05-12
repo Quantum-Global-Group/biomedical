@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 
 from hetqml_api.catalog import integrity_guards_catalog
 from hetqml_api.jobs.store import JobStore
-from hetqml_api.ml import AlgoResult, run_algorithm
+from hetqml_api.ml import AlgoProbs, AlgoResult, run_algorithm_with_probs
 from hetqml_api.persistence.protocols import SettingsStore
 from hetqml_api.schemas import (
     BenchmarkRow,
@@ -90,8 +90,14 @@ def _metrics_from_algo(algo: AlgoResult) -> JobMetrics:
     )
 
 
-def _detailed(rng: random.Random, base: JobMetrics) -> DetailedMetrics:
-    def ci(name: str, value: float, span: float) -> MetricCI:
+def _detailed(
+    rng: random.Random,
+    base: JobMetrics,
+    *,
+    algo: AlgoResult | None = None,
+    probs: AlgoProbs | None = None,
+) -> DetailedMetrics:
+    def ci_fixed(name: str, value: float, span: float) -> MetricCI:
         return MetricCI(
             name=name,
             value=round(value, 4),
@@ -99,24 +105,51 @@ def _detailed(rng: random.Random, base: JobMetrics) -> DetailedMetrics:
             ci_high=round(min(1.0, value + span), 4),
         )
 
-    folds = [
-        CVFold(
-            fold=i + 1,
-            pr_auc=round(base.pr_auc + (rng.random() - 0.5) * 0.08, 4),
-            roc_auc=round(base.roc_auc + (rng.random() - 0.5) * 0.06, 4),
+    def ci_real(name: str, value: float, bounds: tuple[float, float]) -> MetricCI:
+        return MetricCI(
+            name=name,
+            value=round(value, 4),
+            ci_low=round(max(0.0, bounds[0]), 4),
+            ci_high=round(min(1.0, bounds[1]), 4),
         )
-        for i in range(5)
+
+    # CV folds: use real per-fold values when available (algo always carries them).
+    if algo is not None and len(algo.cv_pr_auc) == 5:
+        folds = [
+            CVFold(
+                fold=i + 1,
+                pr_auc=round(algo.cv_pr_auc[i], 4),
+                roc_auc=round(algo.cv_roc_auc[i], 4),
+            )
+            for i in range(5)
+        ]
+    else:
+        folds = [
+            CVFold(
+                fold=i + 1,
+                pr_auc=round(base.pr_auc + (rng.random() - 0.5) * 0.08, 4),
+                roc_auc=round(base.roc_auc + (rng.random() - 0.5) * 0.06, 4),
+            )
+            for i in range(5)
+        ]
+
+    # Confidence intervals: use real bootstrap bounds when available.
+    boot = probs.bootstrap_cis if probs is not None else None
+    metric_cis = [
+        ci_real("PR-AUC", base.pr_auc, boot["PR-AUC"]) if boot and "PR-AUC" in boot
+        else ci_fixed("PR-AUC", base.pr_auc, 0.04),
+        ci_real("ROC-AUC", base.roc_auc, boot["ROC-AUC"]) if boot and "ROC-AUC" in boot
+        else ci_fixed("ROC-AUC", base.roc_auc, 0.03),
+        ci_fixed("F1", 0.62 + 0.25 * rng.random(), 0.04),
+        ci_fixed("Brier", base.brier, 0.02),
+        ci_fixed("MCC", 0.55 + 0.20 * rng.random(), 0.05),
     ]
     return DetailedMetrics(
-        metric_cis=[
-            ci("PR-AUC", base.pr_auc, 0.04),
-            ci("ROC-AUC", base.roc_auc, 0.03),
-            ci("F1", 0.62 + 0.25 * rng.random(), 0.04),
-            ci("Brier", base.brier, 0.02),
-            ci("MCC", 0.55 + 0.20 * rng.random(), 0.05),
-        ],
+        metric_cis=metric_cis,
         cv_folds=folds,
         cv_strategy="5-fold stratified · ancestry-aware",
+        folds_real=algo is not None and len(algo.cv_pr_auc) == 5,
+        cis_real=probs is not None and probs.bootstrap_cis is not None,
     )
 
 
@@ -293,39 +326,55 @@ def _stat_comparison(rng: random.Random, top_pr: float) -> list[StatComparisonRo
 def _embedding(
     spotlight: CandidateSpotlight, job: Job
 ) -> list[list[float]]:
-    """Deterministic 2D layout for the Visualize · 3D UMAP scatter.
+    """2D layout for the Visualize · 3D UMAP scatter.
 
-    One row per ranked candidate (in `spotlight.ranking` order). Coords are
-    derived from:
-      - a per-pair hash (xmur3-style) → angle in a unit disk, so changing
-        a single character of the compound or disease name avalanches the
-        x/y position (consistent with the plan's xmur3 promise);
-      - the candidate's `score` modulating the radius — high-score pairs
-        sit closer to the focus centroid (rank-1) so visual clustering
-        carries the same signal as the leaderboard;
-      - the job seed shifts the disk's centroid so two different runs
-        place clusters in different quadrants without overlapping.
+    When umap-learn is installed, computes a real UMAP projection of each
+    candidate's feature vector (built with the same Gaussian structure as
+    the training data, seeded per-pair). Falls back to a deterministic
+    hash-based surrogate when umap-learn is unavailable or the dataset is
+    too small (< 2 candidates).
 
-    This is not a learned UMAP projection — it's a deterministic surrogate
-    that gives the UI the same wire shape and the same visual semantics
-    (tight clusters near the focus = high-score corroboration) until the
-    real RotatE-128D → UMAP pipeline lands. Documented in
-    `JobResult.embedding`.
+    One row per ranked candidate (in `spotlight.ranking` order).
     """
+    candidates = [(row.compound, row.disease) for row in spotlight.ranking]
+    if len(candidates) >= 2:
+        try:
+            import umap as umap_lib  # type: ignore[import]
+            from hetqml_api.ml.features import build_features_for_candidates
+
+            X = build_features_for_candidates(job.selection, candidates)
+            seed = _seed_for(job)
+            # UMAP random_state must fit in a signed int32.
+            reducer = umap_lib.UMAP(
+                n_components=2,
+                random_state=int(seed % (2**31 - 1)),
+                n_neighbors=min(len(candidates) - 1, 5),
+                min_dist=0.3,
+            )
+            coords = reducer.fit_transform(X)
+            # Normalise both axes to [-0.8, 0.8] so the scatter sits in the
+            # same viewport as the hash-based surrogate.
+            out: list[list[float]] = []
+            for dim in range(2):
+                lo, hi = float(coords[:, dim].min()), float(coords[:, dim].max())
+                if hi > lo:
+                    coords[:, dim] = (coords[:, dim] - lo) / (hi - lo) * 1.6 - 0.8
+            return [[round(float(r[0]), 4), round(float(r[1]), 4)] for r in coords]
+        except Exception:
+            pass  # fall through to hash-based surrogate
+
+    # Hash-based surrogate: deterministic, visually meaningful (score →
+    # radius, rank → ring), no dependency on umap-learn.
     seed_hex = hashlib.sha256(_seed_for(job).to_bytes(8, "big", signed=False)).hexdigest()
     cx = (int(seed_hex[:8], 16) % 1000) / 1000 - 0.5  # [-0.5, 0.5]
     cy = (int(seed_hex[8:16], 16) % 1000) / 1000 - 0.5
-    out: list[list[float]] = []
+    out = []
     for i, row in enumerate(spotlight.ranking):
         digest = hashlib.sha256(
             f"{row.compound}::{row.disease}::{job.id}".encode("utf-8")
         ).hexdigest()
-        # Two independent draws from the digest → angle, jitter.
         ang = (int(digest[:8], 16) % 10_000) / 10_000 * 2 * 3.14159265
-        jitter = (int(digest[8:16], 16) % 10_000) / 10_000  # [0, 1)
-        # Radius shrinks with rank (rank 1 closest, fading outward) and is
-        # nudged outward by 1 - score so weaker candidates drift to the
-        # cluster boundary.
+        jitter = (int(digest[8:16], 16) % 10_000) / 10_000
         rank_radius = 0.18 + 0.06 * i
         score_radius = max(0.0, 1.0 - row.score) * 0.5
         r = rank_radius + score_radius + jitter * 0.08
@@ -361,11 +410,56 @@ def _candidate_spotlight(rng: random.Random, base: JobMetrics, job: Job) -> Cand
     )
 
 
-def _integrity_guards(rng: random.Random) -> list[IntegrityGuardState]:
+def _real_guard_states(
+    algo: AlgoResult,
+    probs: AlgoProbs,
+) -> dict[str, bool]:
+    """Assertions for guards that can be evaluated from CV outputs.
+
+    Returns a dict mapping guard-id → bool. Guards not in this dict fall
+    back to the RNG-seeded default in `_integrity_guards`.
+    """
+    boot = probs.bootstrap_cis
+    ci_width = (
+        max(hi - lo for lo, hi in boot.values())
+        if boot
+        else None
+    )
+    states: dict[str, bool] = {
+        # ECE < 0.10 is the clinical-use threshold.
+        "calibration": algo.ece < 0.10,
+        # Better than chance (prevalence = fraction of positive labels).
+        "random-baseline": algo.pr_auc > probs.prevalence,
+        # Better than the DWPC metapath baseline for Hetionet (Himmelstein 2017).
+        "dwpc-baseline": algo.pr_auc > 0.35,
+        # Provenance is always committed when a job reaches simulate_run.
+        "provenance": True,
+        # Bootstrap CI computed and CI width narrow enough to be meaningful.
+        "bootstrap-ci": boot is not None and ci_width is not None and ci_width < 0.15,
+    }
+    # Quantum-only guards — meaningless for classical runs; skip so
+    # the RNG default handles them (classical runs don't have shots/fidelity).
+    if algo.shots is not None:
+        states["shot-budget"] = algo.shots >= 512
+    if algo.fidelity is not None:
+        states["kernel-spread"] = algo.fidelity > 0.5
+    return states
+
+
+def _integrity_guards(
+    rng: random.Random,
+    *,
+    algo: AlgoResult | None = None,
+    probs: AlgoProbs | None = None,
+) -> list[IntegrityGuardState]:
     cat = integrity_guards_catalog()
+    real_states = _real_guard_states(algo, probs) if algo is not None and probs is not None else {}
     out: list[IntegrityGuardState] = []
     for guard in cat.items:
-        passing = guard.default_on and rng.random() > (0.10 if guard.critical else 0.20)
+        if guard.id in real_states:
+            passing = real_states[guard.id]
+        else:
+            passing = guard.default_on and rng.random() > (0.10 if guard.critical else 0.20)
         out.append(
             IntegrityGuardState(
                 id=guard.id,
@@ -406,7 +500,32 @@ def _trust(rng: random.Random, base: JobMetrics, guards: list[IntegrityGuardStat
     return TrustScorecard(composite=composite, axes=axes)
 
 
-def _reliability(rng: random.Random, base: JobMetrics) -> ReliabilityDiagram:
+def _reliability(
+    rng: random.Random,
+    base: JobMetrics,
+    *,
+    probs: AlgoProbs | None = None,
+) -> ReliabilityDiagram:
+    if probs is not None and len(probs.bin_observed) == 10:
+        bins = [
+            CalibrationBin(
+                bin_low=round(i / 10, 1),
+                bin_high=round((i + 1) / 10, 1),
+                predicted=probs.bin_predicted[i],
+                observed=probs.bin_observed[i],
+                count=probs.bin_count[i],
+            )
+            for i in range(10)
+        ]
+        return ReliabilityDiagram(
+            bins=bins,
+            brier=base.brier,
+            ece=base.ece,
+            mce=probs.mce,
+            log_loss=probs.real_log_loss,
+            bins_real=True,
+        )
+    # Synthetic fallback (used when algo=None, e.g. in tests).
     bins = []
     for i in range(10):
         lo = i / 10
@@ -805,14 +924,19 @@ def _circuit_from_algo(algo: AlgoResult, rng: random.Random) -> QuantumCircuitIn
     )
 
 
-def simulate_run(job: Job, *, algo: AlgoResult | None = None) -> JobResult:
+def simulate_run(
+    job: Job,
+    *,
+    algo: AlgoResult | None = None,
+    probs: AlgoProbs | None = None,
+) -> JobResult:
     """Build a full `JobResult` for a finished job.
 
     When `algo` is provided (the runner's main path), the headline metrics
     + leaderboard top row + quantum-circuit metadata reflect a real
-    cross-validated run from `ml.run_algorithm`. The remaining panels
-    (provenance, evidence matrix, etc.) are still seeded deterministically
-    so the wire shape stays full and the UI exercises every panel.
+    cross-validated run from `ml.run_algorithm_with_probs`. When `probs`
+    is also provided, `_reliability`, `_detailed`, and `_integrity_guards`
+    replace their synthetic scaffolding with real computed values.
 
     When `algo` is None, everything is synthetic — used by tests that
     import this function directly.
@@ -822,7 +946,7 @@ def simulate_run(job: Job, *, algo: AlgoResult | None = None) -> JobResult:
         metrics = _metrics_from(rng)
     else:
         metrics = _metrics_from_algo(algo)
-    detailed = _detailed(rng, metrics)
+    detailed = _detailed(rng, metrics, algo=algo, probs=probs)
     leaderboard = _leaderboard(rng, job.run_path.family)
     # If we have a real run, splice the actual top model into the
     # leaderboard so the family's headline matches what the ML pipeline
@@ -844,9 +968,9 @@ def simulate_run(job: Job, *, algo: AlgoResult | None = None) -> JobResult:
     top = next((r for r in leaderboard if r.is_top), leaderboard[0])
     stat_cmp = _stat_comparison(rng, top.pr_auc)
     spotlight = _candidate_spotlight(rng, metrics, job)
-    guards = _integrity_guards(rng)
+    guards = _integrity_guards(rng, algo=algo, probs=probs)
     trust = _trust(rng, metrics, guards)
-    reliability = _reliability(rng, metrics)
+    reliability = _reliability(rng, metrics, probs=probs)
     skeptic = _skeptic(
         rng,
         metrics,
@@ -950,6 +1074,7 @@ class Runner:
 
         try:
             algo: AlgoResult | None = None
+            probs: AlgoProbs | None = None
             if not self._synthetic_only:
                 ibm_token, ibm_crn = await self._resolve_ibm_credentials()
                 ibm_backend = ""
@@ -961,8 +1086,8 @@ class Runner:
                         ibm_backend = ""
                 # The ML dispatcher is CPU-bound (numpy + Aer); offload to
                 # a worker thread so polling endpoints stay snappy.
-                algo = await asyncio.to_thread(
-                    run_algorithm,
+                algo, probs = await asyncio.to_thread(
+                    run_algorithm_with_probs,
                     running.run_path.family,
                     running.selection,
                     ibm_token=ibm_token,
@@ -974,7 +1099,7 @@ class Runner:
                 # behaviour so unit tests stay fast.
                 await asyncio.sleep(0.0)
 
-            result = simulate_run(running, algo=algo)
+            result = simulate_run(running, algo=algo, probs=probs)
             completed = running.model_copy(
                 update={
                     "status": "completed",

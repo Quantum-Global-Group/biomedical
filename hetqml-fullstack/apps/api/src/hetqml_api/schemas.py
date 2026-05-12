@@ -163,6 +163,8 @@ class DetailedMetrics(CamelModel):
     metric_cis: list[MetricCI]
     cv_folds: list[CVFold]
     cv_strategy: str = "5-fold stratified"
+    folds_real: bool = False  # True when cv_folds are from real CV (not RNG jitter)
+    cis_real: bool = False    # True when metric_cis use real bootstrap bounds
 
 
 class LeaderboardRow(CamelModel):
@@ -252,6 +254,7 @@ class ReliabilityDiagram(CamelModel):
     ece: float
     mce: float
     log_loss: float
+    bins_real: bool = False  # True when bins are from real CV probabilities
 
 
 class SkepticWarning(CamelModel):
@@ -414,6 +417,9 @@ class DecisionRecord(CamelModel):
     pair_key: str  # f"{compoundId}::{diseaseId}"
     verdict: DecisionVerdict
     reviewer: str
+    # Optional ORCID iD for citable researcher attribution in decision exports.
+    # Format: 0000-0000-0000-0000 (16 digits, last may be X).
+    reviewer_orcid: str | None = None
     session_id: str
     selection: Selection
     run_path: RunPath
@@ -442,6 +448,7 @@ class DecisionCreateRequest(CamelModel):
     pair_key: str
     verdict: DecisionVerdict
     reviewer: str
+    reviewer_orcid: str | None = None
     session_id: str
     selection: Selection
     run_path: RunPath
@@ -477,6 +484,7 @@ class ProfileSettings(CamelModel):
     role: str = ""
     organization: str = ""
     contact_email: str = ""
+    orcid: str = ""
 
 
 class AppearanceSettings(CamelModel):
@@ -496,7 +504,7 @@ class PipelineSettings(CamelModel):
 
 class QuantumSettings(CamelModel):
     default_backend: str = "ibm_torino"
-    shots_per_circuit: int = 16384
+    shots_per_circuit: int = 4096
     job_timeout_seconds: int = 1800
     zne_enabled: bool = True
     pulse_level_access: bool = False

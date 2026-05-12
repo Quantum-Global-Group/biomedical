@@ -21,6 +21,31 @@ const AXIS_DESCRIPTORS: Record<string, string> = {
 };
 
 /**
+ * Per-axis data provenance.
+ *
+ * Mirrors the v1 simulate_run logic in apps/api/.../jobs/runner.py::_trust:
+ *   - model:     base.pr_auc + 0.05   → REAL (from cross-validated ML run)
+ *   - artifact:  guard pass-rate       → SEMI-REAL (rate over RNG-seeded guard states)
+ *   - clinical/mechanism/baseline: 0.55 + 0.40*rng() → SYNTHETIC scaffolding
+ *
+ * Surfaced in the UI so a reviewer cannot mistakenly cite a synthetic axis as
+ * empirical evidence in a research paper.
+ */
+type AxisProvenance = "real" | "semi-real" | "synthetic";
+const AXIS_PROVENANCE: Record<string, AxisProvenance> = {
+  model: "real",
+  artifact: "semi-real",
+  clinical: "synthetic",
+  mechanism: "synthetic",
+  baseline: "synthetic",
+};
+const PROVENANCE_LABEL: Record<AxisProvenance, { glyph: string; word: string; color: string }> = {
+  real: { glyph: "●", word: "real", color: "var(--green)" },
+  "semi-real": { glyph: "◐", word: "semi-real", color: "var(--amber)" },
+  synthetic: { glyph: "○", word: "synthetic", color: "var(--faint)" },
+};
+
+/**
  * SVG trust-scorecard radar — five-axis polygon plus per-axis bars.
  *
  * Polygon fills green when all axes are above threshold, amber when one is
@@ -62,6 +87,28 @@ export function TrustRadar({ scorecard, threshold = 0.65 }: Props) {
         system. The radar shows the candidate polygon overlaid on a dashed
         acceptance threshold ({Math.round(threshold * 100)}%) — any axis
         falling below the dashed line is the one to question first.
+      </div>
+
+      <div
+        style={{
+          marginTop: 8,
+          marginBottom: 4,
+          padding: "8px 12px",
+          background: "var(--amber-bg, #2d2510)",
+          border: "1px solid var(--amber, #d4a574)",
+          borderRadius: 6,
+          fontSize: 11.5,
+          lineHeight: 1.55,
+          color: "var(--ink)",
+        }}
+      >
+        <strong>⚠ Provenance disclosure</strong> — only the{" "}
+        <strong>Model</strong> axis is computed from the cross-validated PR-AUC
+        of this run. <strong>Artifact</strong> is the pass-rate over (currently
+        synthetic) integrity guards. <strong>Clinical</strong>,{" "}
+        <strong>Mechanism</strong>, and <strong>Baseline</strong> are
+        deterministic scaffolding seeded per-investigation — do not cite them
+        as empirical evidence in a research paper.
       </div>
 
       <div className="radar-container">
@@ -175,24 +222,55 @@ export function TrustRadar({ scorecard, threshold = 0.65 }: Props) {
           {axes.map((axis) => {
             const pct = Math.round(axis.value * 100);
             const color = axis.passing ? "var(--green)" : "var(--sienna)";
+            const prov = AXIS_PROVENANCE[axis.axis] ?? "synthetic";
+            const provMeta = PROVENANCE_LABEL[prov];
             return (
               <div key={axis.axis}>
                 <div className="radar-bar-head">
                   <div className="radar-bar-name">
                     {AXIS_DESCRIPTORS[axis.axis] ?? axis.axis}
                   </div>
-                  <div className="radar-bar-pct">{pct}%</div>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <span
+                      title={`Data provenance: ${provMeta.word}`}
+                      style={{
+                        fontSize: 9.5,
+                        fontFamily: "var(--font-mono, monospace)",
+                        color: provMeta.color,
+                        padding: "1px 5px",
+                        border: `1px solid ${provMeta.color}`,
+                        borderRadius: 3,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.06em",
+                        fontWeight: 600,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {provMeta.glyph} {provMeta.word}
+                    </span>
+                    <div className="radar-bar-pct">{pct}%</div>
+                  </div>
                 </div>
                 <div className="radar-bar-track">
                   <div
                     className="radar-bar-fill"
-                    style={{ width: `${pct}%`, background: color }}
+                    style={{
+                      width: `${pct}%`,
+                      background: color,
+                      opacity: prov === "synthetic" ? 0.5 : 1,
+                      backgroundImage:
+                        prov === "synthetic"
+                          ? "repeating-linear-gradient(45deg, rgba(0,0,0,0.15) 0 4px, transparent 4px 8px)"
+                          : undefined,
+                    }}
                   />
                 </div>
                 <div className="radar-bar-desc">
                   {axis.passing
                     ? `meets the ${Math.round(threshold * 100)}% bar`
                     : `below the ${Math.round(threshold * 100)}% acceptance threshold`}
+                  {prov === "synthetic" && " · scaffolding (not run-derived)"}
+                  {prov === "semi-real" && " · derived from guard pass-rate"}
                 </div>
               </div>
             );

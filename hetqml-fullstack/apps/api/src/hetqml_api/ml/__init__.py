@@ -26,6 +26,6 @@ Three families:
 
 from __future__ import annotations
 
-from .algorithms import AlgoResult, run_algorithm
+from .algorithms import AlgoProbs, AlgoResult, run_algorithm, run_algorithm_with_probs
 
-__all__ = ["AlgoResult", "run_algorithm"]
+__all__ = ["AlgoProbs", "AlgoResult", "run_algorithm", "run_algorithm_with_probs"]

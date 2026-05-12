@@ -151,6 +151,26 @@ export function BenchmarkSuitePanel({ result }: Props) {
             <span>seed = stable per-selection · 5-fold stratified CV</span>
           </div>
         </div>
+
+        {rows.some((r) => r.status === "SIM") && !isQuantumDisabled && (
+          <div
+            style={{
+              margin: "8px 0",
+              padding: "8px 12px",
+              background: "var(--amber-bg, #2d2510)",
+              border: "1px solid var(--amber, #d4a574)",
+              borderRadius: 6,
+              fontSize: 11.5,
+              color: "var(--ink)",
+            }}
+          >
+            <strong>⚠ SIM rows</strong> — rows marked SIM are deterministic
+            projections from the algorithm catalog. Only rows marked{" "}
+            <strong>LIVE</strong> reflect actual execution in this run.
+            Do not cite SIM cells as independent empirical results.
+          </div>
+        )}
+
         {isQuantumDisabled ? (
           <div
             style={{
@@ -248,6 +268,26 @@ function StatComparisonRows({ rows }: { rows: StatComparisonRow[] }) {
   return (
     <div style={{ marginTop: 16 }}>
       <div className="exp-section-h">STATISTICAL COMPARISON</div>
+      <div
+        style={{
+          marginTop: 8,
+          marginBottom: 8,
+          padding: "8px 12px",
+          background: "var(--amber-bg, #2d2510)",
+          border: "1px solid var(--amber, #d4a574)",
+          borderRadius: 6,
+          fontSize: 11,
+          lineHeight: 1.55,
+          color: "var(--ink)",
+        }}
+      >
+        <strong>⚠ Provenance disclosure</strong> — the Δ values are real
+        (top-model PR-AUC minus a hardcoded reference). The{" "}
+        <strong>p-values</strong> and <strong>effect sizes</strong> are
+        deterministic placeholders, not hypothesis tests. Real paired-bootstrap
+        results live in the OSF preregistration; do not cite the values here as
+        published statistics.
+      </div>
       <div
         style={{
           display: "grid",

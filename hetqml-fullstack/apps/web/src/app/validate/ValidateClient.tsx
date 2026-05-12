@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { DecisionHistory } from "@/components/validate/DecisionHistory";
 import { HeadlineTrustScorecard } from "@/components/validate/HeadlineTrustScorecard";
 import { MetricStrip } from "@/components/validate/MetricStrip";
@@ -27,6 +27,7 @@ import {
 } from "@/lib/shortcuts/useKeyboardShortcuts";
 import { useValidate } from "@/lib/validate/useValidate";
 import type { Job } from "@/lib/api/client";
+import { fetchSettings } from "@/lib/api/client";
 
 interface ValidateClientProps {
   /** jobId resolved from `?jobId=` on the server. localStorage fallback
@@ -55,7 +56,41 @@ export function ValidateClient({
   // after the hook calls so a mid-session toggle can't change the hook
   // count between renders.
   const { mode, hydrated } = useDashboardMode();
-  const v = useValidate({ initialJobId: jobIdFromUrl, initialJob });
+
+  // Pull reviewer identity from Settings → Profile so decision-log records
+  // attribute by name + ORCID rather than the literal "Anonymous reviewer".
+  // Fetched once on mount; silent-fail on network error since the decision
+  // path still works (just attributes to "Anonymous reviewer").
+  const [reviewerProfile, setReviewerProfile] = useState<{
+    name: string | null;
+    orcid: string | null;
+  }>({ name: null, orcid: null });
+  useEffect(() => {
+    if (IS_LITE) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const settings = await fetchSettings();
+        if (cancelled) return;
+        setReviewerProfile({
+          name: settings.profile?.reviewerName ?? null,
+          orcid: settings.profile?.orcid ?? null,
+        });
+      } catch {
+        // Settings unreachable — decision log falls back to "Anonymous reviewer".
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const v = useValidate({
+    initialJobId: jobIdFromUrl,
+    initialJob,
+    reviewerName: reviewerProfile.name,
+    reviewerOrcid: reviewerProfile.orcid,
+  });
 
   // Wire keyboard shortcuts K / V / X to dispatch the same `submitDecision`
   // path the on-screen Keep / Review / Reject buttons use, so the decision

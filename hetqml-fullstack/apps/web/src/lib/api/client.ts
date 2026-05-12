@@ -29,6 +29,8 @@ export interface DetailedMetrics {
   metricCis: MetricCI[];
   cvFolds: CVFold[];
   cvStrategy: string;
+  foldsReal?: boolean;
+  cisReal?: boolean;
 }
 
 export interface LeaderboardRow {
@@ -122,6 +124,7 @@ export interface ReliabilityDiagram {
   ece: number;
   mce: number;
   logLoss: number;
+  binsReal?: boolean;
 }
 
 export type SkepticSource =
@@ -298,7 +301,44 @@ function apiBase(): string {
   );
 }
 
+/** Generate a fresh client-side request id. UUID v4 (RFC 4122) via
+ * `crypto.randomUUID` when available (all evergreen browsers + Node 19+),
+ * otherwise a Math.random fallback. The API echoes this back on response —
+ * support tooling and error UI quote it so a user can hand us one string and
+ * we can grep logs end-to-end. */
+function newRequestId(): string {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID().replace(/-/g, "");
+    }
+  } catch {
+    // fall through
+  }
+  return Array.from({ length: 32 }, () =>
+    Math.floor(Math.random() * 16).toString(16),
+  ).join("");
+}
+
+/** Extends `Error` with the request id echoed by the API so callers (toasts,
+ * Sentry breadcrumbs) can quote it. Falls back to `null` when the response
+ * never reached us (e.g. CORS preflight failure). */
+export class ApiError extends Error {
+  readonly status: number;
+  readonly requestId: string | null;
+  constructor(status: number, detail: string, requestId: string | null) {
+    super(
+      requestId
+        ? `${status} ${detail} (request id: ${requestId})`
+        : `${status} ${detail}`,
+    );
+    this.name = "ApiError";
+    this.status = status;
+    this.requestId = requestId;
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const requestId = newRequestId();
   const res = await fetch(`${apiBase()}${path}`, {
     ...init,
     signal:
@@ -306,9 +346,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       AbortSignal.timeout(90_000),
     headers: {
       "content-type": "application/json",
+      "x-request-id": requestId,
       ...(init?.headers ?? {}),
     },
   });
+  // Server may either honor our id or substitute its own (e.g. proxy-injected);
+  // prefer whatever the server echoed back so logs and UI agree.
+  const echoedRequestId = res.headers.get("x-request-id") ?? requestId;
   if (!res.ok) {
     let detail: string;
     try {
@@ -316,7 +360,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       detail = res.statusText;
     }
-    throw new Error(`${res.status} ${detail}`);
+    throw new ApiError(res.status, detail, echoedRequestId);
   }
   return res.json() as Promise<T>;
 }

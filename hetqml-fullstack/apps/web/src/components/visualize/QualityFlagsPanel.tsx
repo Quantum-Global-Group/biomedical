@@ -38,16 +38,19 @@ export function QualityFlagsPanel({ flags }: Props) {
       <div className="panel-head">
         <div>
           <div className="eyebrow">TOOL · QUALITY OVERLAY</div>
-          <div className="panel-title">Run-time integrity controls</div>
+          <div className="panel-title">Quality-flag snapshot</div>
         </div>
         <span className="badge">
           {passed}/{flags.length} passing
         </span>
       </div>
       <p className="panel-purpose">
-        Lightweight controls evaluated on the run output (data-leak guards,
-        calibration sanity, baseline parity, …). A failed control should
-        invalidate the claim until investigated.
+        Lightweight pass/warn/fail controls evaluated against the run output
+        (data-leak guards, calibration sanity, baseline parity, …).{" "}
+        <strong>v1 caveat:</strong> in the current pipeline most flag states are
+        seeded per-investigation rather than asserted against the real run.
+        Treat this panel as a UX placeholder for the planned wet-asserted
+        checks; do not cite individual flags as evidence in a research paper.
       </p>
 
       {flags.length === 0 ? (

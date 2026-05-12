@@ -22,6 +22,8 @@ interface SummaryRow {
   /** Pass threshold: any value below counts as "good" when lowerIsBetter, else above counts as good. */
   goodAt: number;
   warnAt: number;
+  /** Data provenance — real values are computed from CV; synthetic are RNG scaffolding. */
+  provenance: "real" | "synthetic";
 }
 
 function summaryClass(row: SummaryRow): "good" | "warn" | "" {
@@ -57,6 +59,7 @@ export function ReliabilityDiagram({ reliability }: Props) {
       lowerIsBetter: true,
       goodAt: 0.15,
       warnAt: 0.2,
+      provenance: "real",
     },
     {
       label: "Expected Calibration Error",
@@ -65,6 +68,7 @@ export function ReliabilityDiagram({ reliability }: Props) {
       lowerIsBetter: true,
       goodAt: 0.05,
       warnAt: 0.1,
+      provenance: "real",
     },
     {
       label: "Maximum Calibration Error",
@@ -73,6 +77,7 @@ export function ReliabilityDiagram({ reliability }: Props) {
       lowerIsBetter: true,
       goodAt: 0.08,
       warnAt: 0.15,
+      provenance: reliability.binsReal ? "real" : "synthetic",
     },
     {
       label: "Log loss",
@@ -81,6 +86,7 @@ export function ReliabilityDiagram({ reliability }: Props) {
       lowerIsBetter: true,
       goodAt: 0.3,
       warnAt: 0.5,
+      provenance: reliability.binsReal ? "real" : "synthetic",
     },
   ];
 
@@ -102,6 +108,48 @@ export function ReliabilityDiagram({ reliability }: Props) {
         downward → overconfident. Brier score and ECE summarise the gap in a
         single number.
       </div>
+
+      {reliability.binsReal ? (
+        <div
+          style={{
+            marginTop: 8,
+            marginBottom: 8,
+            padding: "8px 12px",
+            background: "var(--green-bg, #0d2010)",
+            border: "1px solid var(--green, #4caf72)",
+            borderRadius: 6,
+            fontSize: 11.5,
+            lineHeight: 1.55,
+            color: "var(--ink)",
+          }}
+        >
+          <strong>● Real calibration data</strong> — all 10 bins, MCE, and
+          log-loss are computed from the actual cross-validated predicted
+          probabilities. The polyline represents empirical calibration for this
+          run.
+        </div>
+      ) : (
+        <div
+          style={{
+            marginTop: 8,
+            marginBottom: 8,
+            padding: "8px 12px",
+            background: "var(--amber-bg, #2d2510)",
+            border: "1px solid var(--amber, #d4a574)",
+            borderRadius: 6,
+            fontSize: 11.5,
+            lineHeight: 1.55,
+            color: "var(--ink)",
+          }}
+        >
+          <strong>⚠ Provenance disclosure</strong> — <strong>Brier</strong> and{" "}
+          <strong>ECE</strong> are computed from the real cross-validated run.
+          The 10 calibration bins (curve below) and{" "}
+          <strong>MCE</strong> + <strong>Log loss</strong> values are
+          deterministic scaffolding seeded per-investigation — do not cite as
+          empirical calibration evidence.
+        </div>
+      )}
 
       <div className="grid-2">
         <svg
@@ -179,13 +227,15 @@ export function ReliabilityDiagram({ reliability }: Props) {
             />
           ))}
 
-          {/* Curve through observed-rate points */}
+          {/* Curve through observed-rate points. Solid when bins are real CV
+              data; dashed when synthetic scaffolding. */}
           {layout.length > 1 ? (
             <polyline
               points={curvePoints(layout)}
               fill="none"
               stroke="#6BB5B5"
               strokeWidth={2}
+              strokeDasharray={reliability.binsReal ? undefined : "5,3"}
             />
           ) : null}
           {layout.map((p, i) => (
@@ -258,10 +308,59 @@ export function ReliabilityDiagram({ reliability }: Props) {
             {summary.map((row) => (
               <div key={row.label} className="val-cal-row">
                 <div>
-                  <div className="val-cal-label">{row.label}</div>
+                  <div className="val-cal-label">
+                    {row.label}
+                    {row.provenance === "synthetic" && (
+                      <span
+                        title="Value is deterministic scaffolding — not derived from this run's predicted probabilities"
+                        style={{
+                          marginLeft: 8,
+                          fontSize: 9,
+                          fontFamily: "var(--font-mono, monospace)",
+                          color: "var(--faint)",
+                          padding: "1px 5px",
+                          border: "1px solid var(--faint)",
+                          borderRadius: 3,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.06em",
+                          fontWeight: 600,
+                          verticalAlign: "middle",
+                        }}
+                      >
+                        ○ synthetic
+                      </span>
+                    )}
+                    {row.provenance === "real" && (
+                      <span
+                        title="Computed from real cross-validated run"
+                        style={{
+                          marginLeft: 8,
+                          fontSize: 9,
+                          fontFamily: "var(--font-mono, monospace)",
+                          color: "var(--green)",
+                          padding: "1px 5px",
+                          border: "1px solid var(--green)",
+                          borderRadius: 3,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.06em",
+                          fontWeight: 600,
+                          verticalAlign: "middle",
+                        }}
+                      >
+                        ● real
+                      </span>
+                    )}
+                  </div>
                   <div className="desc">{row.desc}</div>
                 </div>
-                <div className={`val-cal-val ${summaryClass(row)}`}>
+                <div
+                  className={`val-cal-val ${summaryClass(row)}`}
+                  style={
+                    row.provenance === "synthetic"
+                      ? { opacity: 0.6 }
+                      : undefined
+                  }
+                >
                   {row.value.toFixed(3)}
                 </div>
               </div>

@@ -113,3 +113,25 @@ def build_features(selection: Selection, *, n_samples: int = 200) -> FeatureMatr
     return FeatureMatrix(
         X=X, y=y, feature_names=feature_names, selection_seed=seed,
     )
+
+
+def build_features_for_candidates(
+    selection: Selection,
+    candidates: list[tuple[str, str]],
+) -> np.ndarray:
+    """Feature vectors for a list of (compound, disease) candidate pairs.
+
+    Each pair gets a feature vector drawn from the same Gaussian structure as
+    the training data, seeded by the compound+disease identity so that similar
+    pairs cluster in feature space. Returns shape (n_candidates, N_FEATURES).
+    """
+    base_seed = _selection_seed(selection)
+    rows = []
+    for compound, disease in candidates:
+        pair_hash = hashlib.sha256(
+            f"{base_seed}|{compound}|{disease}".encode("utf-8")
+        ).digest()
+        pair_seed = int.from_bytes(pair_hash[:4], "big", signed=False)
+        rng = np.random.default_rng(pair_seed)
+        rows.append(rng.normal(0.0, 1.0, size=N_FEATURES))
+    return np.array(rows, dtype=np.float64)

@@ -46,11 +46,13 @@ export function PathDiagramPanel({ path }: Props) {
       <div
         style={{
           display: "flex",
-          alignItems: "stretch",
+          alignItems: "center",
+          justifyContent: path.steps.length <= 4 ? "center" : "flex-start",
           gap: 6,
-          flexWrap: "wrap",
-          padding: "12px 0 8px",
+          flexWrap: "nowrap",
+          padding: "16px 4px 12px",
           overflowX: "auto",
+          scrollbarWidth: "thin",
         }}
       >
         {path.steps.length === 0 ? (
@@ -143,8 +145,10 @@ function PathNode({ label, kind }: { label: string; kind: "entity" }) {
       title={label}
       style={{
         padding: "10px 14px",
-        minWidth: 110,
-        maxWidth: 180,
+        width: 140,
+        minWidth: 140,
+        maxWidth: 140,
+        flex: "0 0 140px",
         background: "var(--card)",
         border: "1px solid var(--teal)",
         borderRadius: 6,
@@ -195,7 +199,10 @@ function PathEdge({
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
+        width: 80,
         minWidth: 80,
+        maxWidth: 80,
+        flex: "0 0 80px",
         gap: 2,
       }}
       title={`Sources: ${sources.join(", ")}`}

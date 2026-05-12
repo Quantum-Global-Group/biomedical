@@ -47,6 +47,7 @@ export function ModelAgreementPanel({ agreement }: Props) {
         </div>
         <span
           className="pill"
+          title="Agreement verdict — STRONG / PARTIAL / BRANCH divergence"
           style={{
             background: v.bg,
             color: v.tone,
@@ -54,7 +55,7 @@ export function ModelAgreementPanel({ agreement }: Props) {
             border: `1px solid ${v.ring}`,
           }}
         >
-          {agreement.verdict.replace(/_/g, " ").toLowerCase()}
+          verdict · {agreement.verdict.replace(/_/g, " ").toLowerCase()}
         </span>
       </div>
       <p className="panel-purpose">
@@ -152,6 +153,81 @@ export function ModelAgreementPanel({ agreement }: Props) {
             </div>
           );
         })}
+
+        {/* X-axis tick labels — anchored to the same `max` the bars use so
+            ticks line up with their geometric position. */}
+        <div
+          style={{
+            position: "relative",
+            height: 16,
+            marginTop: 2,
+            fontSize: 9.5,
+            fontFamily: "var(--font-mono, monospace)",
+            color: "var(--faint)",
+          }}
+          aria-hidden="true"
+        >
+          {[0, 0.25, 0.5, 0.75, 1].map((t) => (
+            <span
+              key={t}
+              style={{
+                position: "absolute",
+                left: `${(t / max) * 100}%`,
+                transform: "translateX(-50%)",
+                top: 0,
+              }}
+            >
+              {t.toFixed(2)}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* Legend strip: bar colours per family + reference-line key */}
+      <div
+        style={{
+          display: "flex",
+          gap: 16,
+          flexWrap: "wrap",
+          marginTop: 10,
+          padding: "6px 10px",
+          background: "var(--paper-alt)",
+          border: "1px solid var(--border-soft)",
+          borderRadius: 4,
+          fontSize: 10.5,
+          color: "var(--muted)",
+          fontFamily: "var(--font-mono, monospace)",
+        }}
+      >
+        {agreement.bars.map((bar) => (
+          <span
+            key={bar.family}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+          >
+            <span
+              aria-hidden="true"
+              style={{
+                width: 10,
+                height: 10,
+                borderRadius: 2,
+                background: FAMILY_COLOR[bar.family] ?? "var(--ink)",
+              }}
+            />
+            {bar.family}
+          </span>
+        ))}
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <span
+            aria-hidden="true"
+            style={{
+              width: 1.5,
+              height: 12,
+              background: "var(--ink)",
+              opacity: 0.6,
+            }}
+          />
+          cross-family mean
+        </span>
       </div>
 
       <div
@@ -159,7 +235,7 @@ export function ModelAgreementPanel({ agreement }: Props) {
           display: "grid",
           gridTemplateColumns: "repeat(2, 1fr)",
           gap: 10,
-          marginTop: 16,
+          marginTop: 12,
         }}
       >
         <Stat label="mean" value={agreement.mean.toFixed(3)} />

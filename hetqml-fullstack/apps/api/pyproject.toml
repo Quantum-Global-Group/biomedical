@@ -19,6 +19,9 @@ dependencies = [
     "qiskit>=1.2.0",
     "qiskit-aer>=0.15.0",
     "qiskit-ibm-runtime>=0.30.0",
+    # Optional: real UMAP embedding for candidate scatter. Graceful fallback
+    # to hash-based positions when not installed.
+    "umap-learn>=0.5",
 ]
 
 [dependency-groups]

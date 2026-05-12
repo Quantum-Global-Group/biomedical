@@ -75,8 +75,19 @@ export type NoteState =
 
 const NOTE_DEBOUNCE_MS = 600;
 
-function defaultReviewer(): string {
-  return "anonymous reviewer";
+/** Fallback when no Settings → Profile reviewer name is configured.
+ *  Capitalized so an audit reader can spot it as a placeholder, not a real
+ *  reviewer identity. */
+const DEFAULT_REVIEWER = "Anonymous reviewer";
+
+function resolveReviewer(name?: string | null): string {
+  const trimmed = name?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : DEFAULT_REVIEWER;
+}
+
+function resolveOrcid(orcid?: string | null): string | null {
+  const trimmed = orcid?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : null;
 }
 
 function ensureSessionId(): string {
@@ -101,10 +112,21 @@ export interface UseValidateOptions {
   /** Job hydrated server-side. When provided, the first client fetch is
    * skipped and the phase boots as "loading"/"ready" depending on status. */
   initialJob?: Job | null;
+  /** Reviewer name pulled from Settings → Profile. Falls back to
+   * "Anonymous reviewer" when blank. */
+  reviewerName?: string | null;
+  /** Reviewer ORCID iD pulled from Settings → Profile. Optional — included
+   * in the decision payload for citable attribution. */
+  reviewerOrcid?: string | null;
 }
 
 export function useValidate(options: UseValidateOptions = {}): ValidateState {
-  const { initialJobId = null, initialJob = null } = options;
+  const {
+    initialJobId = null,
+    initialJob = null,
+    reviewerName = null,
+    reviewerOrcid = null,
+  } = options;
   const catalogs = useCatalogs();
   // Subscribe to the global integrity-guard store so the decision payload's
   // `guardsCompromised` and `integrityGuards` snapshot reflects the user's
@@ -310,7 +332,8 @@ export function useValidate(options: UseValidateOptions = {}): ValidateState {
       const input: DecisionCreateInput = {
         pairKey,
         verdict,
-        reviewer: defaultReviewer(),
+        reviewer: resolveReviewer(reviewerName),
+        reviewerOrcid: resolveOrcid(reviewerOrcid),
         sessionId: ensureSessionId(),
         selection: {
           disease: job.selection.disease,
@@ -344,7 +367,7 @@ export function useValidate(options: UseValidateOptions = {}): ValidateState {
         setDecisionPending(false);
       }
     },
-    [job, pairKey, refreshDecisions, integrityGuardsLive.catalog, integrityGuardsLive.toggles],
+    [job, pairKey, refreshDecisions, integrityGuardsLive.catalog, integrityGuardsLive.toggles, reviewerName, reviewerOrcid],
   );
 
   // --- Notes -------------------------------------------------------------

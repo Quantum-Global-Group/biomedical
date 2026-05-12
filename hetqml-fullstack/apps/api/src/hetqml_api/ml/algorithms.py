@@ -18,6 +18,13 @@ fidelity-style overlaps between upper-triangular pairs of Gram-matrix
 rows (order O(n²) circuits for n training rows). Override row count on
 hardware only with env `HETQML_QUANTUM_HW_SAMPLES`. The boolean
 `used_real_hardware` distinguishes Aer vs IBM execution.
+
+`run_algorithm_with_probs()` returns both an `AlgoResult` and an
+`AlgoProbs` carrying the full predicted-probability arrays plus
+pre-computed calibration bins, log-loss, MCE, bootstrap CI, and
+prevalence. The runner uses `AlgoProbs` to replace synthetic scaffolding
+with real values in `_reliability()`, `_detailed()`, and
+`_integrity_guards()`.
 """
 
 from __future__ import annotations
@@ -107,6 +114,133 @@ class AlgoResult:
     notes: list[str] = field(default_factory=list)
 
 
+@dataclass
+class AlgoProbs:
+    """Predicted-probability arrays and derived calibration data from CV.
+
+    Not serialized to the JSON wire format — consumed only by
+    `jobs.runner` to replace synthetic scaffolding with real values in
+    `_reliability()`, `_detailed()`, and `_integrity_guards()`.
+    """
+
+    y_all: list[float]           # concatenated true labels across all CV folds
+    p_all: list[float]           # concatenated predicted probabilities
+    bin_observed: list[float]    # fraction_of_positives per uniform bin (len 10)
+    bin_predicted: list[float]   # mean_predicted_value per uniform bin (len 10)
+    bin_count: list[int]         # sample count per bin (len 10)
+    mce: float                   # max calibration error across bins
+    real_log_loss: float         # binary cross-entropy on full CV set
+    prevalence: float            # fraction of positive labels in training data
+    bootstrap_cis: dict[str, tuple[float, float]] | None = None
+
+
+def _calibration_data(
+    y: np.ndarray, p: np.ndarray, *, n_bins: int = 10
+) -> tuple[list[float], list[float], list[int], float]:
+    """Uniform-width calibration bins from real CV outputs.
+
+    Returns (bin_observed, bin_predicted, bin_count, mce). Empty bins
+    are filled with the bin midpoint so the downstream panel always
+    receives exactly n_bins entries.
+    """
+    edges = np.linspace(0.0, 1.0, n_bins + 1)
+    bin_obs: list[float] = []
+    bin_pred: list[float] = []
+    bin_cnt: list[int] = []
+    for i in range(n_bins):
+        lo, hi = edges[i], edges[i + 1]
+        # Include the right edge only in the last bin (handles p == 1.0).
+        mask = (p >= lo) & (p < hi if i < n_bins - 1 else p <= hi)
+        cnt = int(mask.sum())
+        mid = float((lo + hi) / 2)
+        if cnt > 0:
+            obs = float(y[mask].mean())
+            pred = float(p[mask].mean())
+        else:
+            obs = mid
+            pred = mid
+        bin_obs.append(round(obs, 3))
+        bin_pred.append(round(pred, 3))
+        bin_cnt.append(cnt)
+    mce = max(abs(f - m) for f, m in zip(bin_obs, bin_pred))
+    return bin_obs, bin_pred, bin_cnt, round(mce, 4)
+
+
+def _log_loss_fn(y: np.ndarray, p: np.ndarray) -> float:
+    """Binary cross-entropy, numerically safe."""
+    eps = 1e-7
+    p_clip = np.clip(p, eps, 1.0 - eps)
+    return float(-np.mean(y * np.log(p_clip) + (1.0 - y) * np.log(1.0 - p_clip)))
+
+
+def _bootstrap_ci(
+    y: np.ndarray,
+    p: np.ndarray,
+    *,
+    rng: np.random.Generator,
+    n_boot: int = 1000,
+) -> dict[str, tuple[float, float]]:
+    """Paired bootstrap 95% CI for PR-AUC and ROC-AUC.
+
+    Resamples (y, p) with replacement n_boot times. Any resample where
+    only one class is present is skipped. Returns an empty dict if too
+    few valid resamples were drawn (e.g. extremely small dataset).
+    """
+    n = len(y)
+    pr_boots: list[float] = []
+    roc_boots: list[float] = []
+    for _ in range(n_boot):
+        idx = rng.integers(0, n, size=n)
+        yb, pb = y[idx], p[idx]
+        if len(np.unique(yb)) < 2:
+            continue
+        try:
+            pr_boots.append(float(average_precision_score(yb, pb)))
+            roc_boots.append(float(roc_auc_score(yb, pb)))
+        except Exception:
+            continue
+    if len(pr_boots) < 50:
+        return {}
+    pr_arr = np.array(pr_boots)
+    roc_arr = np.array(roc_boots)
+    return {
+        "PR-AUC": (
+            round(float(np.percentile(pr_arr, 2.5)), 4),
+            round(float(np.percentile(pr_arr, 97.5)), 4),
+        ),
+        "ROC-AUC": (
+            round(float(np.percentile(roc_arr, 2.5)), 4),
+            round(float(np.percentile(roc_arr, 97.5)), 4),
+        ),
+    }
+
+
+def _build_probs(
+    y_all: np.ndarray,
+    p_all: np.ndarray,
+    selection_seed: int,
+    *,
+    n_boot: int = 1000,
+) -> AlgoProbs:
+    """Assemble AlgoProbs from the raw CV output arrays."""
+    bin_obs, bin_pred, bin_cnt, mce = _calibration_data(y_all, p_all)
+    ll = round(_log_loss_fn(y_all, p_all), 4)
+    prev = round(float(y_all.mean()), 4)
+    rng = np.random.default_rng(selection_seed)
+    cis = _bootstrap_ci(y_all, p_all, rng=rng, n_boot=n_boot) or None
+    return AlgoProbs(
+        y_all=y_all.tolist(),
+        p_all=p_all.tolist(),
+        bin_observed=bin_obs,
+        bin_predicted=bin_pred,
+        bin_count=bin_cnt,
+        mce=mce,
+        real_log_loss=ll,
+        prevalence=prev,
+        bootstrap_cis=cis,
+    )
+
+
 def _ece(y_true: np.ndarray, y_prob: np.ndarray, *, n_bins: int = 10) -> float:
     """Expected Calibration Error — the gap between predicted probability
     and observed frequency, averaged over equal-width bins."""
@@ -149,7 +283,7 @@ def _cv_score(
 # --- Classical -----------------------------------------------------------
 
 
-def run_classical(selection: Selection) -> AlgoResult:
+def run_classical(selection: Selection) -> tuple[AlgoResult, AlgoProbs]:
     """Logistic regression + gradient boosting ensemble on standardized
     features. 5-fold stratified CV. Real metrics, no quantum work."""
     t0 = time.perf_counter()
@@ -175,7 +309,7 @@ def run_classical(selection: Selection) -> AlgoResult:
     pr_aucs, roc_aucs, y_all, p_all = _cv_score(fm, fit_predict)
     runtime = time.perf_counter() - t0
 
-    return AlgoResult(
+    result = AlgoResult(
         family="classical",
         pr_auc=float(np.mean(pr_aucs)),
         roc_auc=float(np.mean(roc_aucs)),
@@ -192,6 +326,8 @@ def run_classical(selection: Selection) -> AlgoResult:
             "Standardized features → LogReg + GradientBoosting averaged",
         ],
     )
+    probs = _build_probs(y_all, p_all, fm.selection_seed)
+    return result, probs
 
 
 # --- Quantum kernel (hybrid + quantum families) --------------------------
@@ -379,7 +515,7 @@ def _run_qk_family(
     ibm_token: str,
     ibm_crn: str,
     ibm_backend: str = "",
-) -> AlgoResult:
+) -> tuple[AlgoResult, AlgoProbs]:
     """Shared body for the hybrid + quantum families. Difference is
     purely whether we use the local Aer simulator or IBM hardware to
     compute the kernel matrix."""
@@ -426,7 +562,7 @@ def _run_qk_family(
     if "fallback_reason" in meta:
         notes.append(meta["fallback_reason"])
 
-    return AlgoResult(
+    result = AlgoResult(
         family=family,
         pr_auc=float(np.mean(pr_aucs)),
         roc_auc=float(np.mean(roc_aucs)),
@@ -446,9 +582,11 @@ def _run_qk_family(
         used_real_hardware=meta["used_real_hardware"],
         notes=notes,
     )
+    probs = _build_probs(y_all, p_all, fm.selection_seed)
+    return result, probs
 
 
-def run_hybrid(selection: Selection) -> AlgoResult:
+def run_hybrid(selection: Selection) -> tuple[AlgoResult, AlgoProbs]:
     return _run_qk_family("hybrid", selection, ibm_token="", ibm_crn="")
 
 
@@ -458,7 +596,7 @@ def run_quantum(
     ibm_token: str,
     ibm_crn: str,
     ibm_backend: str = "",
-) -> AlgoResult:
+) -> tuple[AlgoResult, AlgoProbs]:
     return _run_qk_family(
         "quantum",
         selection,
@@ -471,17 +609,18 @@ def run_quantum(
 # --- Dispatcher ----------------------------------------------------------
 
 
-def run_algorithm(
+def run_algorithm_with_probs(
     family: str,
     selection: Selection,
     *,
     ibm_token: str = "",
     ibm_crn: str = "",
     ibm_backend: str = "",
-) -> AlgoResult:
-    """Top-level entrypoint. The runner calls this with the family from
-    `job.run_path.family` and the credentials it pulled from the settings
-    store at job-launch time."""
+) -> tuple[AlgoResult, AlgoProbs]:
+    """Top-level entrypoint used by the runner. Returns both AlgoResult
+    (real CV metrics) and AlgoProbs (probability arrays + calibration
+    data) so the runner can replace synthetic scaffolding with real
+    computed values."""
     if family == "classical":
         return run_classical(selection)
     if family == "hybrid":
@@ -494,3 +633,19 @@ def run_algorithm(
             ibm_backend=ibm_backend,
         )
     raise ValueError(f"Unknown family: {family!r}")
+
+
+def run_algorithm(
+    family: str,
+    selection: Selection,
+    *,
+    ibm_token: str = "",
+    ibm_crn: str = "",
+    ibm_backend: str = "",
+) -> AlgoResult:
+    """Backward-compatible entrypoint that returns only AlgoResult.
+    Prefer `run_algorithm_with_probs` for new call sites."""
+    result, _ = run_algorithm_with_probs(
+        family, selection, ibm_token=ibm_token, ibm_crn=ibm_crn, ibm_backend=ibm_backend
+    )
+    return result
