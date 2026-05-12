@@ -23,10 +23,12 @@ const AXIS_DESCRIPTORS: Record<string, string> = {
 /**
  * Per-axis data provenance.
  *
- * Mirrors the v1 simulate_run logic in apps/api/.../jobs/runner.py::_trust:
+ * Mirrors simulate_run → apps/api/.../jobs/runner.py::_trust:
  *   - model:     base.pr_auc + 0.05   → REAL (from cross-validated ML run)
  *   - artifact:  guard pass-rate       → SEMI-REAL (rate over RNG-seeded guard states)
- *   - clinical/mechanism/baseline: 0.55 + 0.40*rng() → SYNTHETIC scaffolding
+ *   - baseline:  PR-AUC vs published Hetionet metapath anchors → REAL (literature)
+ *   - clinical / mechanism: bundled-catalog heuristics by default; optional
+ *     OpenTargets when HETQML_TRUST_OPENTARGETS=1 → SEMI-REAL (partial API slice / proxy)
  *
  * Surfaced in the UI so a reviewer cannot mistakenly cite a synthetic axis as
  * empirical evidence in a research paper.
@@ -35,9 +37,9 @@ type AxisProvenance = "real" | "semi-real" | "synthetic";
 const AXIS_PROVENANCE: Record<string, AxisProvenance> = {
   model: "real",
   artifact: "semi-real",
-  clinical: "synthetic",
-  mechanism: "synthetic",
-  baseline: "synthetic",
+  clinical: "semi-real",
+  mechanism: "semi-real",
+  baseline: "real",
 };
 const PROVENANCE_LABEL: Record<AxisProvenance, { glyph: string; word: string; color: string }> = {
   real: { glyph: "●", word: "real", color: "var(--green)" },

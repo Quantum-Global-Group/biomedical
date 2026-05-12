@@ -1,13 +1,13 @@
 # HetQML Pipeline Status — What's Real vs Synthetic
 
-**Last updated:** 2026-05-12 (McNemar stat comparison §6, hybrid classical OOF)
+**Last updated:** 2026-05-12 (trust axes §4: literature baseline + catalog / optional OpenTargets)
 **Branch:** main (pipeline doc tracks behaviour, not a fixed SHA)
 
 ---
 
 ## Executive Summary
 
-The dashboard runs a genuine ML cross-validation pipeline (classical, hybrid-quantum, IBM-Quantum). **By default** (`HETQML_FEATURE_MATRIX_SOURCE` unset or `catalog`) training features are **Hetionet-informed**: published Hetionet v1.0 metaedge edge totals plus bundled catalog attributes (DrugBank / DOID / gene categories, FDA flag, PubChem CID proxy), with a binary label for whether a row is the focal compound–disease pair versus a random catalog pair. Set `HETQML_FEATURE_MATRIX_SOURCE=synthetic` to restore the legacy Gaussian demo matrix. All statistical outputs — fold scores, calibration bins, bootstrap CIs, Brier score, ECE — are mathematically real computations on whichever matrix is active. For the Experiment **statistical comparison** panel, **McNemar** p-values (exact two-sided binomial on discordant OOF decisions) apply to **vs best classical** on hybrid/quantum runs and to **vs random predictor** (naive constant-at-prevalence baseline); other reference rows still use placeholder p-values until those models expose paired OOF predictions. Per-pair **DWPC** values from the full Hetionet graph are **not** bundled here yet; that remains future work (`hybrid-qml-kg-poc` ingestion path).
+The dashboard runs a genuine ML cross-validation pipeline (classical, hybrid-quantum, IBM-Quantum). **By default** (`HETQML_FEATURE_MATRIX_SOURCE` unset or `catalog`) training features are **Hetionet-informed**: published Hetionet v1.0 metaedge edge totals plus bundled catalog attributes (DrugBank / DOID / gene categories, FDA flag, PubChem CID proxy), with a binary label for whether a row is the focal compound–disease pair versus a random catalog pair. Set `HETQML_FEATURE_MATRIX_SOURCE=synthetic` to restore the legacy Gaussian demo matrix. All statistical outputs — fold scores, calibration bins, bootstrap CIs, Brier score, ECE — are mathematically real computations on whichever matrix is active. For the Experiment **statistical comparison** panel, **McNemar** p-values (exact two-sided binomial on discordant OOF decisions) apply to **vs best classical** on hybrid/quantum runs and to **vs random predictor** (naive constant-at-prevalence baseline); other reference rows still use placeholder p-values until those models expose paired OOF predictions. **Validate trust radar:** the **baseline** spoke is a **literature ratio** (headline PR-AUC vs Himmelstein 2017 metapath anchors); **clinical** / **mechanism** default to **deterministic catalog proxies** (set `HETQML_TRUST_OPENTARGETS=1` to blend in OpenTargets GraphQL where available). Per-pair **DWPC** values from the full Hetionet graph are **not** bundled here yet; that remains future work (`hybrid-qml-kg-poc` ingestion path).
 
 **Persistence:** In production and local `pnpm dev:api`, completed **jobs** are stored in **SQLite** via `SqliteJobStore` (`apps/api/src/hetqml_api/main.py`) on the same connection as decisions, notes, settings, and preregistration — **not** an in-memory job store. Pytest’s shared `client` fixture swaps in `InMemoryJobStore` only to keep HTTP tests fast (see `tests/conftest.py` and `tests/test_app_job_store_wiring.py`).
 
@@ -60,20 +60,19 @@ The dashboard runs a genuine ML cross-validation pipeline (classical, hybrid-qua
 
 ---
 
-### 4 · Trust Scorecard — MIXED
+### 4 · Trust Scorecard — MIXED (literature baseline + catalog / optional OpenTargets)
 
 | Axis | Status | Source |
 |---|---|---|
 | model | ● Real | `base.pr_auc + 0.05` (disclosed offset) |
 | artifact | ◐ Semi-real | Pass rate of integrity guards (7 real + 16 RNG) |
-| clinical | ○ Synthetic | `0.55 + 0.40 × rng.random()` |
-| mechanism | ○ Synthetic | `0.55 + 0.40 × rng.random()` |
-| baseline | ○ Synthetic | `0.50 + 0.45 × rng.random()` |
+| clinical | ◐ Semi-real | **Default:** deterministic proxy from bundled catalog (FDA flag, therapeutic class vs disease category). **Optional:** OpenTargets drug↔disease clinical-stage evidence when `HETQML_TRUST_OPENTARGETS=1` (public GraphQL; cached per selection). |
+| mechanism | ◐ Semi-real | **Default:** gene vs disease category heuristics from catalog. **Optional:** OpenTargets MOA gene match + target–disease association slice when `HETQML_TRUST_OPENTARGETS=1`. |
+| baseline | ● Real | Headline PR-AUC ÷ published Hetionet metapath AUROC anchors (Himmelstein et al., eLife 2017), keyed by metaedge code — `trust_axes.baseline_axis_value` |
 
-**To make synthetic axes real:**
-- `clinical`: OpenTargets / ClinicalTrials.gov association score for the compound-disease pair
-- `mechanism`: Gene-ontology overlap between drug targets and disease pathways
-- `baseline`: Published AURPC from the Himmelstein 2017 Hetionet paper for the same metaedge class
+**Implementation:** `apps/api/src/hetqml_api/trust_axes.py`; `jobs/runner.py::_trust` wires real ML runs to `compute_trust_extras`. RNG scaffolding remains only when `algo is None` (synthetic job path).
+
+**Next:** Richer mechanism (curated GO / pathway overlap), ClinicalTrials.gov trial counts, and DOID→EFO mapping tables so OpenTargets hits survive rare disease strings without relying on substring fallbacks.
 
 ---
 
@@ -171,7 +170,7 @@ With 6 candidates and `n_neighbors=5`, UMAP will produce a meaningful 2D layout 
 | 4 | Replace synthetic candidates with real (compound, disease) pairs from graph query | Partially done — catalog slice + classical scores; full DWPC graph query remains |
 | 5 | Job persistence: SQLite prod wiring + tests + doc (§7 / `test_app_job_store_wiring`) | Done |
 | 6 | McNemar p-values on stacked OOF (vs classical + vs naive prevalence); extend to more baselines | Partial — hybrid/quantum + naive row done |
-| 7 | Clinical + mechanism trust axes from OpenTargets / GO overlap | 1–2 weeks |
+| 7 | Trust axes: literature baseline + catalog proxies; optional OpenTargets (`HETQML_TRUST_OPENTARGETS`) | Partial — GO / ClinicalTrials still future |
 | 8 | Remaining integrity guards (ancestry, leakage, hard-negatives) | 2–4 weeks |
 
 ---
@@ -179,6 +178,6 @@ With 6 candidates and `n_neighbors=5`, UMAP will produce a meaningful 2D layout 
 ## What Can Be Cited in a Paper Now
 
 - **Can cite (catalog mode):** CV methodology, calibration, bootstrap CIs, and that feature rows include **published Hetionet v1.0 metaedge totals** and curated catalog identifiers. Do **not** claim per-compound–disease DWPCs without the pairwise table.
-- **Cannot cite:** Fine-grained repurposing effect sizes from DWPCs not yet in this repo. Trust scorecard clinical/mechanism/baseline axes. Statistical comparison **p-values for vs hybrid / vs quantum / vs DWPC** (still RNG placeholders). Spotlight ranking as **Neo4j-derived path evidence** (it is catalog-neighborhood + classical head scores, not DWPC edge queries). Synthetic evidence matrix / paths.
-- **May cite with disclosure:** McNemar p-values for **vs best classical** (hybrid/quantum headline vs classical LR+GBM on the same OOF stack) and **vs random predictor** (vs constant-at-prevalence probabilities); exact two-sided binomial on discordant pairs (`ml/paired_stats.py`).
+- **Cannot cite:** Fine-grained repurposing effect sizes from DWPCs not yet in this repo. Trust scorecard **clinical / mechanism** as standalone clinical-trial or GO evidence unless `HETQML_TRUST_OPENTARGETS=1` and you disclose the OpenTargets slice used. Statistical comparison **p-values for vs hybrid / vs quantum / vs DWPC** (still RNG placeholders). Spotlight ranking as **Neo4j-derived path evidence** (it is catalog-neighborhood + classical head scores, not DWPC edge queries). Synthetic evidence matrix / paths.
+- **May cite with disclosure:** Trust **baseline** spoke as a ratio vs published Hetionet metapath AUROC anchors (`trust_axes.py`). McNemar p-values for **vs best classical** and **vs random predictor** (`ml/paired_stats.py`).
 - **Must disclose:** Synthetic mode when enabled; in catalog mode, disclose that edge totals are graph-level aggregates, not per-pair path counts from a live Neo4j pull.

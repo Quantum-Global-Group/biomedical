@@ -581,7 +581,14 @@ def _integrity_guards(
 _TRUST_THRESHOLD = 0.65
 
 
-def _trust(rng: random.Random, base: JobMetrics, guards: list[IntegrityGuardState]) -> TrustScorecard:
+def _trust(
+    rng: random.Random,
+    base: JobMetrics,
+    guards: list[IntegrityGuardState],
+    *,
+    selection: Selection | None = None,
+    algo: AlgoResult | None = None,
+) -> TrustScorecard:
     """Five-axis trust scorecard.
 
     `passing` for every axis is derived against the same 0.65 threshold the
@@ -589,12 +596,25 @@ def _trust(rng: random.Random, base: JobMetrics, guards: list[IntegrityGuardStat
     consistent across UI + API means the failing-axis bold-red label
     triggers exactly when the polygon vertex falls inside the dashed
     threshold pentagon.
+
+    When ``selection`` and ``algo`` are present (real ML path), clinical /
+    mechanism / baseline use ``trust_axes`` (catalog heuristics by default;
+    optional OpenTargets when ``HETQML_TRUST_OPENTARGETS=1``). Otherwise the
+    legacy RNG scaffold is used for those three axes.
     """
     artifact_pass_rate = sum(1 for g in guards if g.passing) / max(1, len(guards))
-    clinical_v = round(0.55 + 0.40 * rng.random(), 3)
-    mechanism_v = round(0.55 + 0.40 * rng.random(), 3)
+    if selection is not None and algo is not None:
+        from hetqml_api.trust_axes import compute_trust_extras
+
+        clinical_v, mechanism_v, baseline_v = compute_trust_extras(selection, base.pr_auc)
+        clinical_v = round(clinical_v, 3)
+        mechanism_v = round(mechanism_v, 3)
+        baseline_v = round(baseline_v, 3)
+    else:
+        clinical_v = round(0.55 + 0.40 * rng.random(), 3)
+        mechanism_v = round(0.55 + 0.40 * rng.random(), 3)
+        baseline_v = round(0.50 + 0.45 * rng.random(), 3)
     model_v = round(min(0.99, base.pr_auc + 0.05), 3)
-    baseline_v = round(0.50 + 0.45 * rng.random(), 3)
     artifact_v = round(artifact_pass_rate, 3)
     axes = [
         TrustAxis(axis="clinical", value=clinical_v, passing=clinical_v >= _TRUST_THRESHOLD),
@@ -1076,7 +1096,7 @@ def simulate_run(
     stat_cmp = _stat_comparison(rng, top.pr_auc, algo=algo, probs=probs)
     spotlight = _candidate_spotlight(rng, metrics, job, algo=algo, probs=probs)
     guards = _integrity_guards(rng, algo=algo, probs=probs)
-    trust = _trust(rng, metrics, guards)
+    trust = _trust(rng, metrics, guards, selection=job.selection, algo=algo)
     reliability = _reliability(rng, metrics, probs=probs)
     skeptic = _skeptic(
         rng,

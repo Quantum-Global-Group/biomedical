@@ -31,6 +31,7 @@ The web app reads `NEXT_PUBLIC_API_URL` (browser) and `API_INTERNAL_URL` (server
 - After a hardware job, check **uvicorn logs** for `IBM Quantum kernel:` (backend, circuit count, **`runtime_job_id`**) and the job **result notes** for **“IBM Runtime job id (Workloads UI)”** — search that id in **Quantum Platform → Workloads**. Clear console filters (instance / region / user) if you do not see it.
 - Optional API env: **`HETQML_QUANTUM_HW_SAMPLES`** (integer, min **25**, max **60**) caps how many rows feed the QK Gram matrix on **IBM only**, reducing circuit count for a smaller smoke run.
 - Feature matrix: **`HETQML_FEATURE_MATRIX_SOURCE`** — `catalog` (default: Hetionet v1.0 metaedge totals + bundled catalog attributes; see `docs/pipeline-status.md` §1) or `synthetic` (legacy Gaussian demo).
+- **Trust radar (API):** **`HETQML_TRUST_OPENTARGETS`** — `0` (default: deterministic catalog proxies for clinical/mechanism + literature baseline ratio) or `1` (blend OpenTargets GraphQL where lookups succeed).
 - **Job persistence:** `create_app` wires **`SqliteJobStore`** (same SQLite file as decisions/settings under `DATA_DIR`, default `apps/api/.data/`). Pytest’s `conftest` swaps **`InMemoryJobStore`** on `app.state` for fast HTTP tests; see `tests/test_app_job_store_wiring.py` for the production default.
 
 ## Tests
