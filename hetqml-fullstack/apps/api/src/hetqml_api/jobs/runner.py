@@ -16,9 +16,17 @@ import math
 import random
 from datetime import UTC, datetime
 
+import numpy as np
+
 from hetqml_api.catalog import integrity_guards_catalog
 from hetqml_api.jobs.store import JobStore
 from hetqml_api.ml import AlgoProbs, AlgoResult, run_algorithm_with_probs
+from hetqml_api.ml.paired_stats import (
+    average_precision_stack,
+    mcnemar_p_value,
+    mcnemar_richardson_effect,
+    significance_from_p,
+)
 from hetqml_api.persistence.protocols import SettingsStore
 from hetqml_api.schemas import (
     BenchmarkRow,
@@ -297,8 +305,24 @@ def _benchmarks(rng: random.Random, leaderboard: list[LeaderboardRow]) -> list[B
     return out
 
 
-def _stat_comparison(rng: random.Random, top_pr: float) -> list[StatComparisonRow]:
-    def row(label: str, ref: float, sig_floor: float) -> StatComparisonRow:
+def _stat_comparison(
+    rng: random.Random,
+    top_pr: float,
+    *,
+    algo: AlgoResult | None = None,
+    probs: AlgoProbs | None = None,
+) -> list[StatComparisonRow]:
+    """Populate STATISTICAL COMPARISON rows.
+
+    When ``probs`` carries stacked OOF labels + probabilities from the real
+    pipeline, **vs best classical** (hybrid/quantum only, when
+    ``oof_probs_classical`` is present) and **vs random predictor** (naive
+    constant-at-prevalence probabilities) use exact McNemar p-values and
+    Richardson effect sizes. Remaining reference rows still use synthetic
+    p-values until those baselines expose paired OOF predictions.
+    """
+
+    def synthetic_row(label: str, ref: float, sig_floor: float) -> StatComparisonRow:
         delta = round(top_pr - ref, 4)
         p = max(0.0001, min(0.5, sig_floor + (rng.random() - 0.5) * 0.05))
         if p < 0.005:
@@ -317,12 +341,69 @@ def _stat_comparison(rng: random.Random, top_pr: float) -> list[StatComparisonRo
             significance=sig,  # type: ignore[arg-type]
         )
 
+    if probs is None or algo is None:
+        return [
+            synthetic_row("vs best classical", 0.72, 0.03),
+            synthetic_row("vs best hybrid", 0.79, 0.06),
+            synthetic_row("vs best quantum", 0.74, 0.05),
+            synthetic_row("vs DWPC", 0.65, 0.005),
+            synthetic_row("vs random predictor", 0.50, 0.0005),
+        ]
+
+    y = np.asarray(probs.y_all, dtype=float)
+    p_top = np.asarray(probs.p_all, dtype=float)
+    headline_ap = average_precision_stack(y, p_top)
+
+    # --- Row 1: headline vs classical OOF (McNemar) -------------------------
+    row_classical: StatComparisonRow
+    p_cls_arr = (
+        np.asarray(probs.oof_probs_classical, dtype=float)
+        if probs.oof_probs_classical is not None
+        else None
+    )
+    if algo.family != "classical" and p_cls_arr is not None:
+        ref_ap = average_precision_stack(y, p_cls_arr)
+        delta_c = round(float(headline_ap - ref_ap), 4)
+        p_c = mcnemar_p_value(y, p_top, p_cls_arr)
+        eff_c = round(float(mcnemar_richardson_effect(y, p_top, p_cls_arr)), 4)
+        row_classical = StatComparisonRow(
+            label="vs best classical",
+            delta=delta_c,
+            p_value=round(float(max(p_c, 1e-6)), 4),
+            effect_size=eff_c,
+            significance=significance_from_p(p_c),  # type: ignore[arg-type]
+        )
+    else:
+        # Classical headline or missing OOF reference: keep PR delta vs a
+        # literature-style anchor; McNemar self-test is uninformative.
+        row_classical = StatComparisonRow(
+            label="vs best classical",
+            delta=round(top_pr - 0.72, 4),
+            p_value=1.0,
+            effect_size=0.0,
+            significance="ns",  # type: ignore[arg-type]
+        )
+
+    # --- Row 5: vs naive prevalence-only probabilities (McNemar) ----------
+    prev = float(np.mean(y))
+    p_naive = np.full_like(y, prev, dtype=float)
+    delta_r = round(float(headline_ap - prev), 4)
+    p_r = mcnemar_p_value(y, p_top, p_naive)
+    eff_r = round(float(mcnemar_richardson_effect(y, p_top, p_naive)), 4)
+    row_random = StatComparisonRow(
+        label="vs random predictor",
+        delta=delta_r,
+        p_value=round(float(max(p_r, 1e-6)), 4),
+        effect_size=eff_r,
+        significance=significance_from_p(p_r),  # type: ignore[arg-type]
+    )
+
     return [
-        row("vs best classical", 0.72, 0.03),
-        row("vs best hybrid", 0.79, 0.06),
-        row("vs best quantum", 0.74, 0.05),
-        row("vs DWPC", 0.65, 0.005),
-        row("vs random predictor", 0.50, 0.0005),
+        row_classical,
+        synthetic_row("vs best hybrid", 0.79, 0.06),
+        synthetic_row("vs best quantum", 0.74, 0.05),
+        synthetic_row("vs DWPC", 0.65, 0.005),
+        row_random,
     ]
 
 
@@ -992,7 +1073,7 @@ def simulate_run(
         row.row_status = "RUN" if algo is not None and row.is_top else "SIM"
     benchmarks = _benchmarks(rng, leaderboard)
     top = next((r for r in leaderboard if r.is_top), leaderboard[0])
-    stat_cmp = _stat_comparison(rng, top.pr_auc)
+    stat_cmp = _stat_comparison(rng, top.pr_auc, algo=algo, probs=probs)
     spotlight = _candidate_spotlight(rng, metrics, job, algo=algo, probs=probs)
     guards = _integrity_guards(rng, algo=algo, probs=probs)
     trust = _trust(rng, metrics, guards)

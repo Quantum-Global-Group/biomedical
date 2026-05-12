@@ -1,13 +1,13 @@
 # HetQML Pipeline Status — What's Real vs Synthetic
 
-**Last updated:** 2026-05-12 (job-store wiring test, persistence §7 clarity)
+**Last updated:** 2026-05-12 (McNemar stat comparison §6, hybrid classical OOF)
 **Branch:** main (pipeline doc tracks behaviour, not a fixed SHA)
 
 ---
 
 ## Executive Summary
 
-The dashboard runs a genuine ML cross-validation pipeline (classical, hybrid-quantum, IBM-Quantum). **By default** (`HETQML_FEATURE_MATRIX_SOURCE` unset or `catalog`) training features are **Hetionet-informed**: published Hetionet v1.0 metaedge edge totals plus bundled catalog attributes (DrugBank / DOID / gene categories, FDA flag, PubChem CID proxy), with a binary label for whether a row is the focal compound–disease pair versus a random catalog pair. Set `HETQML_FEATURE_MATRIX_SOURCE=synthetic` to restore the legacy Gaussian demo matrix. All statistical outputs — fold scores, calibration bins, bootstrap CIs, Brier score, ECE — are mathematically real computations on whichever matrix is active. Per-pair **DWPC** values from the full Hetionet graph are **not** bundled here yet; that remains future work (`hybrid-qml-kg-poc` ingestion path).
+The dashboard runs a genuine ML cross-validation pipeline (classical, hybrid-quantum, IBM-Quantum). **By default** (`HETQML_FEATURE_MATRIX_SOURCE` unset or `catalog`) training features are **Hetionet-informed**: published Hetionet v1.0 metaedge edge totals plus bundled catalog attributes (DrugBank / DOID / gene categories, FDA flag, PubChem CID proxy), with a binary label for whether a row is the focal compound–disease pair versus a random catalog pair. Set `HETQML_FEATURE_MATRIX_SOURCE=synthetic` to restore the legacy Gaussian demo matrix. All statistical outputs — fold scores, calibration bins, bootstrap CIs, Brier score, ECE — are mathematically real computations on whichever matrix is active. For the Experiment **statistical comparison** panel, **McNemar** p-values (exact two-sided binomial on discordant OOF decisions) apply to **vs best classical** on hybrid/quantum runs and to **vs random predictor** (naive constant-at-prevalence baseline); other reference rows still use placeholder p-values until those models expose paired OOF predictions. Per-pair **DWPC** values from the full Hetionet graph are **not** bundled here yet; that remains future work (`hybrid-qml-kg-poc` ingestion path).
 
 **Persistence:** In production and local `pnpm dev:api`, completed **jobs** are stored in **SQLite** via `SqliteJobStore` (`apps/api/src/hetqml_api/main.py`) on the same connection as decisions, notes, settings, and preregistration — **not** an in-memory job store. Pytest’s shared `client` fixture swaps in `InMemoryJobStore` only to keep HTTP tests fast (see `tests/conftest.py` and `tests/test_app_job_store_wiring.py`).
 
@@ -107,15 +107,19 @@ The dashboard runs a genuine ML cross-validation pipeline (classical, hybrid-qua
 
 ---
 
-### 6 · Statistical Comparison — SYNTHETIC
+### 6 · Statistical Comparison — MIXED (McNemar where OOF pairs exist)
 
 | Item | Status |
 |---|---|
-| Δ (top model vs reference PR-AUC) | ● Real |
-| p-values | ○ Synthetic — `sig_floor + rng.random() × 0.05` |
-| Effect sizes | ○ Synthetic — `|Δ| × 4.5` (post-hoc scaling, not from a real test) |
+| Δ PR-AUC (stacked OOF) | ● Real for **vs best classical** (hybrid/quantum) and **vs random predictor** — `average_precision_score` on concatenated CV hold-out labels vs headline or reference probs |
+| Δ PR-AUC (hardcoded refs) | ◐ Semi-real — **vs best hybrid / vs best quantum / vs DWPC** still use fixed reference PR anchors for Δ only (no second model’s OOF probs in-repo yet) |
+| p-values | ● Real (exact McNemar, two-sided binomial on discordant pairs) for **vs best classical** when `oof_probs_classical` is present (`AlgoProbs`, hybrid/quantum runs) and for **vs random predictor** (headline vs naive constant-at-prevalence probabilities, same OOF stack) |
+| p-values (other rows) | ○ Synthetic — same RNG scaffold as before until those baselines expose paired OOF predictions |
+| Effect sizes | ● Real — Richardson `(b−c)/(b+c)` on McNemar discordant pairs for the two real rows; **`|Δ| × 4.5`** placeholder only for the three synthetic p-value rows |
 
-**To fix:** McNemar's test or paired permutation test over the 5 CV folds comparing the top model against a classical baseline. Requires storing per-fold predictions for both the model and reference.
+**Implementation:** `ml/paired_stats.py` (McNemar + AP); `ml/algorithms.py` runs a second classical CV pass on the **same** `FeatureMatrix` and folds as the QK-SVC headline and stores `oof_probs_classical` on `AlgoProbs`; `jobs/runner.py` `_stat_comparison` consumes it.
+
+**Next:** Add OOF probability vectors for additional baselines (e.g. a true DWPC ranker head) so the remaining rows can drop the RNG p-values.
 
 ---
 
@@ -166,7 +170,7 @@ With 6 candidates and `n_neighbors=5`, UMAP will produce a meaningful 2D layout 
 | 3 | Pairwise DWPC / integrated scores from full Hetionet graph (replace catalog row builder) | 1–2 weeks |
 | 4 | Replace synthetic candidates with real (compound, disease) pairs from graph query | Partially done — catalog slice + classical scores; full DWPC graph query remains |
 | 5 | Job persistence: SQLite prod wiring + tests + doc (§7 / `test_app_job_store_wiring`) | Done |
-| 6 | Real p-values via McNemar / permutation test over CV folds | 2–3 days |
+| 6 | McNemar p-values on stacked OOF (vs classical + vs naive prevalence); extend to more baselines | Partial — hybrid/quantum + naive row done |
 | 7 | Clinical + mechanism trust axes from OpenTargets / GO overlap | 1–2 weeks |
 | 8 | Remaining integrity guards (ancestry, leakage, hard-negatives) | 2–4 weeks |
 
@@ -175,5 +179,6 @@ With 6 candidates and `n_neighbors=5`, UMAP will produce a meaningful 2D layout 
 ## What Can Be Cited in a Paper Now
 
 - **Can cite (catalog mode):** CV methodology, calibration, bootstrap CIs, and that feature rows include **published Hetionet v1.0 metaedge totals** and curated catalog identifiers. Do **not** claim per-compound–disease DWPCs without the pairwise table.
-- **Cannot cite:** Fine-grained repurposing effect sizes from DWPCs not yet in this repo. Trust scorecard clinical/mechanism/baseline axes. Statistical comparison p-values. Spotlight ranking as **Neo4j-derived path evidence** (it is catalog-neighborhood + classical head scores, not DWPC edge queries). Synthetic evidence matrix / paths.
+- **Cannot cite:** Fine-grained repurposing effect sizes from DWPCs not yet in this repo. Trust scorecard clinical/mechanism/baseline axes. Statistical comparison **p-values for vs hybrid / vs quantum / vs DWPC** (still RNG placeholders). Spotlight ranking as **Neo4j-derived path evidence** (it is catalog-neighborhood + classical head scores, not DWPC edge queries). Synthetic evidence matrix / paths.
+- **May cite with disclosure:** McNemar p-values for **vs best classical** (hybrid/quantum headline vs classical LR+GBM on the same OOF stack) and **vs random predictor** (vs constant-at-prevalence probabilities); exact two-sided binomial on discordant pairs (`ml/paired_stats.py`).
 - **Must disclose:** Synthetic mode when enabled; in catalog mode, disclose that edge totals are graph-level aggregates, not per-pair path counts from a live Neo4j pull.

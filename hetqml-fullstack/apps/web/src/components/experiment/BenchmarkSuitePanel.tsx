@@ -281,12 +281,15 @@ function StatComparisonRows({ rows }: { rows: StatComparisonRow[] }) {
           color: "var(--ink)",
         }}
       >
-        <strong>⚠ Provenance disclosure</strong> — the Δ values are real
-        (top-model PR-AUC minus a hardcoded reference). The{" "}
-        <strong>p-values</strong> and <strong>effect sizes</strong> are
-        deterministic placeholders, not hypothesis tests. Real paired-bootstrap
-        results live in the OSF preregistration; do not cite the values here as
-        published statistics.
+        <strong>⚠ Provenance disclosure</strong> — <strong>Δ PR-AUC</strong> for
+        <em>vs best classical</em> (hybrid/quantum) and <em>vs random predictor</em>{" "}
+        is computed from stacked out-of-fold labels and probabilities (
+        <code>average_precision_score</code>). Matching rows use an{" "}
+        <strong>exact McNemar</strong> p-value (two-sided binomial on discordant
+        0.5-threshold decisions) and a Richardson effect size. Rows{" "}
+        <em>vs best hybrid</em>, <em>vs best quantum</em>, and <em>vs DWPC</em> still
+        use synthetic p-values and scaled effect placeholders until those baselines
+        ship paired OOF predictions in the API.
       </div>
       <div
         style={{

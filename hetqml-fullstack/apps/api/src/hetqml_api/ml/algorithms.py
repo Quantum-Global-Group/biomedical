@@ -20,11 +20,11 @@ hardware only with env `HETQML_QUANTUM_HW_SAMPLES`. The boolean
 `used_real_hardware` distinguishes Aer vs IBM execution.
 
 `run_algorithm_with_probs()` returns both an `AlgoResult` and an
-`AlgoProbs` carrying the full predicted-probability arrays plus
-pre-computed calibration bins, log-loss, MCE, bootstrap CI, and
-prevalence. The runner uses `AlgoProbs` to replace synthetic scaffolding
-with real values in `_reliability()`, `_detailed()`, and
-`_integrity_guards()`.
+`AlgoProbs` carrying stacked OOF labels/probabilities, calibration bins,
+log-loss, MCE, bootstrap CI, prevalence, and (for hybrid/quantum) classical
+LR+GBM OOF probabilities on the same folds for McNemar comparisons. The
+runner uses `AlgoProbs` in `_reliability()`, `_detailed()`,
+`_integrity_guards()`, and `_stat_comparison()` (see `ml/paired_stats.py`).
 """
 
 from __future__ import annotations
@@ -132,6 +132,9 @@ class AlgoProbs:
     real_log_loss: float         # binary cross-entropy on full CV set
     prevalence: float            # fraction of positive labels in training data
     bootstrap_cis: dict[str, tuple[float, float]] | None = None
+    #: Classical LR+GBM OOF probs on the same CV splits / ``FeatureMatrix`` as
+    #: the headline hybrid or quantum run. ``None`` for classical-only jobs.
+    oof_probs_classical: list[float] | None = None
 
 
 def _calibration_data(
@@ -221,6 +224,7 @@ def _build_probs(
     selection_seed: int,
     *,
     n_boot: int = 1000,
+    oof_probs_classical: np.ndarray | None = None,
 ) -> AlgoProbs:
     """Assemble AlgoProbs from the raw CV output arrays."""
     bin_obs, bin_pred, bin_cnt, mce = _calibration_data(y_all, p_all)
@@ -228,6 +232,12 @@ def _build_probs(
     prev = round(float(y_all.mean()), 4)
     rng = np.random.default_rng(selection_seed)
     cis = _bootstrap_ci(y_all, p_all, rng=rng, n_boot=n_boot) or None
+    oof_cls_list: list[float] | None = None
+    if oof_probs_classical is not None:
+        oc = np.asarray(oof_probs_classical, dtype=float)
+        if oc.shape != p_all.shape:
+            raise ValueError("oof_probs_classical must align with p_all / y_all")
+        oof_cls_list = oc.tolist()
     return AlgoProbs(
         y_all=y_all.tolist(),
         p_all=p_all.tolist(),
@@ -238,6 +248,7 @@ def _build_probs(
         real_log_loss=ll,
         prevalence=prev,
         bootstrap_cis=cis,
+        oof_probs_classical=oof_cls_list,
     )
 
 
@@ -280,6 +291,35 @@ def _cv_score(
     return pr_aucs, roc_aucs, np.concatenate(all_y), np.concatenate(all_p)
 
 
+def _classical_fold_probs(
+    fm: FeatureMatrix,
+    train_idx: np.ndarray,
+    test_idx: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """One CV fold: standardized LR + GBM averaged probabilities on held-out rows."""
+    X_tr, X_te = fm.X[train_idx], fm.X[test_idx]
+    y_tr, y_te = fm.y[train_idx], fm.y[test_idx]
+    lr = Pipeline(
+        [("scaler", StandardScaler()), ("clf", LogisticRegression(max_iter=500))]
+    )
+    gbm = GradientBoostingClassifier(
+        n_estimators=80, max_depth=3, random_state=fm.selection_seed
+    )
+    lr.fit(X_tr, y_tr)
+    gbm.fit(X_tr, y_tr)
+    prob = (lr.predict_proba(X_te)[:, 1] + gbm.predict_proba(X_te)[:, 1]) / 2.0
+    return y_te, prob
+
+
+def _classical_fit_predict_closure(fm: FeatureMatrix):
+    def fit_predict(
+        train_idx: np.ndarray, test_idx: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
+        return _classical_fold_probs(fm, train_idx, test_idx)
+
+    return fit_predict
+
+
 # --- Classical -----------------------------------------------------------
 
 
@@ -289,24 +329,7 @@ def run_classical(selection: Selection) -> tuple[AlgoResult, AlgoProbs]:
     t0 = time.perf_counter()
     fm = build_features(selection)
 
-    def fit_predict(
-        train_idx: np.ndarray, test_idx: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray]:
-        X_tr, X_te = fm.X[train_idx], fm.X[test_idx]
-        y_tr, y_te = fm.y[train_idx], fm.y[test_idx]
-        # Two heads: smooth linear baseline + a non-linear booster. Average
-        # their probabilistic predictions — the ensemble usually beats
-        # either alone on the synthetic distribution.
-        lr = Pipeline(
-            [("scaler", StandardScaler()), ("clf", LogisticRegression(max_iter=500))]
-        )
-        gbm = GradientBoostingClassifier(n_estimators=80, max_depth=3, random_state=fm.selection_seed)
-        lr.fit(X_tr, y_tr)
-        gbm.fit(X_tr, y_tr)
-        prob = (lr.predict_proba(X_te)[:, 1] + gbm.predict_proba(X_te)[:, 1]) / 2.0
-        return y_te, prob
-
-    pr_aucs, roc_aucs, y_all, p_all = _cv_score(fm, fit_predict)
+    pr_aucs, roc_aucs, y_all, p_all = _cv_score(fm, _classical_fit_predict_closure(fm))
     runtime = time.perf_counter() - t0
 
     result = AlgoResult(
@@ -547,6 +570,9 @@ def _run_qk_family(
         return fm.y[test_idx], prob
 
     pr_aucs, roc_aucs, y_all, p_all = _cv_score(fm, fit_predict)
+    _, _, y_cls, p_cls = _cv_score(fm, _classical_fit_predict_closure(fm))
+    if not np.array_equal(y_cls, y_all):
+        raise RuntimeError("classical OOF labels must match headline CV stacking")
     runtime = time.perf_counter() - t0
 
     notes = [
@@ -582,7 +608,9 @@ def _run_qk_family(
         used_real_hardware=meta["used_real_hardware"],
         notes=notes,
     )
-    probs = _build_probs(y_all, p_all, fm.selection_seed)
+    probs = _build_probs(
+        y_all, p_all, fm.selection_seed, oof_probs_classical=p_cls
+    )
     return result, probs
 
 
