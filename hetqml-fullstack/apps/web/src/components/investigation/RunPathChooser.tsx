@@ -43,17 +43,17 @@ const CARD_UI: Record<
   },
   hybrid: {
     icon: "⌥",
-    sub: "QSVC · VQC + baselines",
+    sub: "QK-SVC (Aer) + baselines",
     algo: "3 + 8 baselines",
-    time: "~2m · mixed",
-    detail: "straightforward parameter-efficient run",
+    time: "~2m · Aer",
+    detail: "kernel SVC · local simulator",
   },
   quantum: {
     icon: "⊗",
-    sub: "QAOA · VQE + baselines",
+    sub: "QK-SVC + baselines · IBM optional",
     algo: "2 + 8 baselines",
-    time: "~4m · 18k shots",
-    detail: "straightforward hardware-validated run",
+    time: "~4m · Aer or IBM",
+    detail: "IBM when creds set; else Aer",
   },
 };
 
@@ -77,11 +77,12 @@ export function RunPathChooser({ choice, onChange, catalog }: Props) {
         <span className="badge">Selector</span>
       </div>
       <p className="panel-purpose">
-        <strong>Pick a preset bundle below.</strong> Each card runs the canonical
-        set of algorithms for its category — click and the run is configured.
-        Classical baselines always run alongside quantum / hybrid for direct
-        comparison. For drill-down or per-algorithm customization, use the{" "}
-        <em>Algorithm Catalog</em> below.
+        <strong>Pick a preset bundle below.</strong> The API runs one{" "}
+        <em>headline</em> trainer per family (classical ensemble vs quantum
+        kernel SVC) plus a fixed leaderboard of comparison rows — many catalog
+        names are methodological context; non-headline rows are marked SIM on
+        Experiment. Classical baselines always accompany hybrid / quantum paths.
+        For drill-down metadata, use the <em>Algorithm Catalog</em> below.
       </p>
 
       <div className="run-path-grid">

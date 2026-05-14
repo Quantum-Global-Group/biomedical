@@ -203,6 +203,8 @@ class StatComparisonRow(CamelModel):
     p_value: float
     effect_size: float
     significance: Literal["ns", "marginal", "significant", "highly-significant"]
+    # True only for McNemar rows wired to stacked OOF predictions from the headline run.
+    paired_oof: bool = False
 
 
 class CandidateRankingRow(CamelModel):
@@ -280,6 +282,8 @@ class EvidenceMatrixCell(CamelModel):
 class EvidenceMatrix(CamelModel):
     cells: list[EvidenceMatrixCell]
     summary: str
+    # Heuristic layers use focal selection + run path — not pairwise DWPC.
+    source: Literal["focal_selection_heuristic", "rng_demo"] = "rng_demo"
 
 
 class ModelAgreementBar(CamelModel):
@@ -293,6 +297,8 @@ class ModelAgreement(CamelModel):
     spread: float
     mean: float
     verdict: Literal["STRONG_AGREEMENT", "PARTIAL_DIVERGENCE", "BRANCH_DIVERGENCE"]
+    # True when scores are best PR-AUC per family from the leaderboard roster.
+    leaderboard_derived: bool = False
 
 
 class ProvenanceEvent(CamelModel):

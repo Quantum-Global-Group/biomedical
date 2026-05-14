@@ -33,6 +33,7 @@ The web app reads `NEXT_PUBLIC_API_URL` (browser) and `API_INTERNAL_URL` (server
 - Feature matrix: **`HETQML_FEATURE_MATRIX_SOURCE`** — `catalog` (default: Hetionet v1.0 metaedge totals + bundled catalog attributes; see `docs/pipeline-status.md` §1) or `synthetic` (legacy Gaussian demo).
 - **Trust radar (API):** **`HETQML_TRUST_OPENTARGETS`** — `0` (default: deterministic catalog proxies for clinical/mechanism + literature baseline ratio) or `1` (blend OpenTargets GraphQL where lookups succeed).
 - **Job persistence:** `create_app` wires **`SqliteJobStore`** (same SQLite file as decisions/settings under `DATA_DIR`, default `apps/api/.data/`). Pytest’s `conftest` swaps **`InMemoryJobStore`** on `app.state` for fast HTTP tests; see `tests/test_app_job_store_wiring.py` for the production default.
+- **Demo gallery / canned investigations:** export stable jobs with **`HETQML_SEED_DEMO_JOBS=1`** (truthy strings: `1`, `true`, `yes`) before starting **`pnpm dev:api`**. API upserts **`hetqml-demo-classical-v1`**, **`hetqml-demo-hybrid-v1`**, **`hetqml-demo-quantum-aer-v1`** (see **`apps/web`** route **`/demo`**). Optional disk export: **`cd apps/api && uv run python scripts/export_demo_jobs.py`** writes JSON under **`fixtures/demo_jobs/`** (gitignored optional).
 
 ## Tests
 

@@ -57,7 +57,9 @@ export function SessionPanel({ selection, runPath, onRestore }: Props) {
       <p className="panel-purpose">
         Investigations are reusable artifacts. Save a snapshot of the four
         parameters + run path, then restore it later. State persists in the
-        browser via localStorage.
+        browser via localStorage. Snapshots are not the same as completed job
+        links — after a run finishes, use the handoff buttons or{" "}
+        <code>?jobId=</code> on Experiment to reopen a specific result.
       </p>
 
       <div className="current-state" id="current-state">

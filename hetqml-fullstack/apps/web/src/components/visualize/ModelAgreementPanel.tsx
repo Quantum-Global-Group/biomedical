@@ -63,6 +63,23 @@ export function ModelAgreementPanel({ agreement }: Props) {
         small spread means classical/hybrid/quantum agree, large spread means
         you should probably not bet the run on a single family.
       </p>
+      {agreement.leaderboardDerived ? (
+        <div
+          className="panel-purpose"
+          style={{
+            marginBottom: 12,
+            padding: "8px 12px",
+            border: "1px solid var(--border-soft)",
+            borderRadius: 6,
+            fontSize: 11,
+            color: "var(--muted)",
+          }}
+          data-testid="model-agreement-disclosure"
+        >
+          <strong>Scores</strong> mirror the best scaffold PR-AUC per family on
+          this job&apos;s leaderboard (not an independent agreement experiment).
+        </div>
+      ) : null}
 
       <div
         style={{

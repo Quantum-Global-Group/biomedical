@@ -28,6 +28,7 @@ import {
 import { useValidate } from "@/lib/validate/useValidate";
 import type { Job } from "@/lib/api/client";
 import { fetchSettings } from "@/lib/api/client";
+import { RecentJobLinks } from "@/components/sessions/RecentJobLinks";
 
 interface ValidateClientProps {
   /** jobId resolved from `?jobId=` on the server. localStorage fallback
@@ -351,6 +352,7 @@ function EmptyState() {
           </Link>
         </div>
       </div>
+      <RecentJobLinks route="validate" />
     </>
   );
 }

@@ -67,9 +67,9 @@ export const BENCHMARK_TABS: readonly BenchmarkTab[] = [
   },
   {
     id: "quantum-hw",
-    label: "Quantum HW",
+    label: "Quantum execution",
     summary:
-      "Hardware-specific execution evidence for models that touched IBM backends.",
+      "Backend, shots, depth, and readout columns for rows that reference a quantum backend (values are still benchmark-suite SIM cells per row).",
     columns: [
       ["backend", "Backend"],
       ["shots", "Shots"],

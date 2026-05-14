@@ -26,6 +26,7 @@ import type { InitialCatalogs } from "@/lib/data/fetchCatalogsServer";
 import { getJob, startInvestigation, type Job } from "@/lib/api/client";
 import type { StoredSession } from "@/lib/sessions/storage";
 import { setLastJobId } from "@/lib/sessions/lastJob";
+import { pushRecentJob } from "@/lib/sessions/recentJobs";
 import { useVisiblePoll } from "@/lib/polling/useVisiblePoll";
 import { isLiteMode } from "@/lib/liteMode";
 
@@ -133,6 +134,15 @@ export function InitializeClient({
       const created = await startInvestigation({ selection, runPath });
       setJob(created);
       setLastJobId(created.id);
+      pushRecentJob({
+        id: created.id,
+        createdAt: created.createdAt,
+        runFamily: created.runPath.family,
+        label:
+          selection.compound && selection.disease
+            ? `${selection.compound} · ${selection.disease}`
+            : undefined,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -290,7 +300,8 @@ export function InitializeClient({
           The Initialize page is six tools stacked into a contract. Read top-to-bottom:{" "}
           <strong>investigation parameters</strong> define what you&apos;re asking,{" "}
           <strong>candidate context</strong> says why this compound is worth asking about,{" "}
-          <strong>run path</strong> determines which algorithms execute,{" "}
+          <strong>run path</strong> selects the headline trainer family (vs{" "}
+          roster rows marked SIM on Experiment),{" "}
           <strong>live KG preview</strong> shows what the model will see before compute,{" "}
           <strong>evidence posture</strong> guarantees the integrity guards are on, and{" "}
           <strong>session</strong> persists the snapshot so the contract is reproducible.
@@ -332,7 +343,14 @@ export function InitializeClient({
             ⌥ Check operations
           </Link>
         </div>
-        <Link className="btn-primary" href="/experiment">
+        <Link
+          className="btn-primary"
+          href={
+            job?.id
+              ? `/experiment?jobId=${encodeURIComponent(job.id)}`
+              : "/experiment"
+          }
+        >
           Open Experiment →
         </Link>
       </div>
@@ -341,6 +359,29 @@ export function InitializeClient({
 }
 
 function JobView({ job }: { job: Job }) {
+  const handoffLinks =
+    job.status === "completed" && job.id ? (
+      <div
+        data-testid="job-handoff"
+        style={{
+          marginTop: 14,
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 8,
+        }}
+      >
+        <Link className="btn-primary" href={`/experiment?jobId=${encodeURIComponent(job.id)}`}>
+          Open Experiment
+        </Link>
+        <Link className="btn" href={`/validate?jobId=${encodeURIComponent(job.id)}`}>
+          Validate
+        </Link>
+        <Link className="btn" href={`/visualize?jobId=${encodeURIComponent(job.id)}`}>
+          Visualize
+        </Link>
+      </div>
+    ) : null;
+
   return (
     <div style={{ marginTop: 16 }}>
       <div
@@ -393,6 +434,7 @@ function JobView({ job }: { job: Job }) {
       {job.error ? (
         <div style={{ marginTop: 10, color: "var(--sienna)" }}>{job.error}</div>
       ) : null}
+      {handoffLinks}
     </div>
   );
 }

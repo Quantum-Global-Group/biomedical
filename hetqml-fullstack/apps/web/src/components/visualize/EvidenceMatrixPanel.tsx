@@ -53,6 +53,23 @@ export function EvidenceMatrixPanel({ matrix }: Props) {
         the right way), <strong>fallback</strong> (synthetic stand-in), or{" "}
         <strong>missing</strong> (no signal at all).
       </p>
+      {matrix.source === "focal_selection_heuristic" ? (
+        <div
+          className="panel-purpose"
+          style={{
+            marginBottom: 12,
+            padding: "8px 12px",
+            border: "1px solid var(--border-soft)",
+            borderRadius: 6,
+            fontSize: 11,
+            color: "var(--muted)",
+          }}
+          data-testid="evidence-matrix-disclosure"
+        >
+          <strong>Disposition</strong> — layer states summarize the focal catalog
+          selection and headline run path (not full-graph DWPC / path evidence).
+        </div>
+      ) : null}
 
       <div
         style={{

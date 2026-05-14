@@ -222,12 +222,12 @@ describe("pickGeneralist", () => {
     );
   });
 
-  it("picks QAOA for quantum", () => {
-    expect(pickGeneralist("quantum", groups)?.name).toBe("QAOA");
+  it("returns null for quantum (headline trainer is QK-SVC, not roster variational)", () => {
+    expect(pickGeneralist("quantum", groups)).toBeNull();
   });
 
   it("returns null when no algorithm matches the family", () => {
-    expect(pickGeneralist("quantum", groups.slice(0, 1))).toBeNull();
+    expect(pickGeneralist("hybrid", groups.slice(2))).toBeNull();
   });
 
   it("is stable: same input always returns the same row", () => {

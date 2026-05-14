@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -35,8 +36,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        # Connection is opened in create_app() before the app starts
-        # serving traffic; lifespan owns shutdown.
+        if os.getenv("HETQML_SEED_DEMO_JOBS", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }:
+            from hetqml_api.jobs.demo_seed import ensure_demo_jobs_on_startup
+
+            await ensure_demo_jobs_on_startup(app.state.job_store)
         try:
             yield
         finally:  # pragma: no cover - lifecycle

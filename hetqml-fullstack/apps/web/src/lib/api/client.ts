@@ -69,6 +69,8 @@ export interface StatComparisonRow {
   pValue: number;
   effectSize: number;
   significance: StatSignificance;
+  /** McNemar row wired to headline OOF probabilities */
+  pairedOof?: boolean;
 }
 
 export interface CandidateRankingRow {
@@ -165,6 +167,8 @@ export interface EvidenceMatrixCell {
 export interface EvidenceMatrix {
   cells: EvidenceMatrixCell[];
   summary: string;
+  /** rng_demo legacy tests; focal_selection_heuristic = selection-based posture */
+  source?: "focal_selection_heuristic" | "rng_demo";
 }
 
 export interface ModelAgreementBar {
@@ -183,6 +187,8 @@ export interface ModelAgreement {
   spread: number;
   mean: number;
   verdict: ModelAgreementVerdict;
+  /** Bars track best PR-AUC per family from the leaderboard roster */
+  leaderboardDerived?: boolean;
 }
 
 export interface ProvenanceEvent {

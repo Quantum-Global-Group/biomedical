@@ -27,7 +27,7 @@ export const RECOMMENDATION_PROFILES: readonly RecommendationProfile[] = [
     rationale:
       "APOL1 ancestry-aware kidney signal: compound mechanism, anchor gene, and disease context all point at the same causal axis.",
     nextStep:
-      "Use Hybrid or Quantum HW if you want to test parameter-efficient advantage over the classical baseline.",
+      "Use Hybrid (Aer kernel) or Quantum HW (IBM when Settings has token+CRN, else Aer) to compare the quantum-kernel headline against classical baselines.",
   },
   {
     disease: "Systemic lupus erythematosus",

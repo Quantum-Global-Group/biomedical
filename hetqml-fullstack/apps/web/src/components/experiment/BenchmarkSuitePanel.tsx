@@ -287,9 +287,9 @@ function StatComparisonRows({ rows }: { rows: StatComparisonRow[] }) {
         <code>average_precision_score</code>). Matching rows use an{" "}
         <strong>exact McNemar</strong> p-value (two-sided binomial on discordant
         0.5-threshold decisions) and a Richardson effect size. Rows{" "}
-        <em>vs best hybrid</em>, <em>vs best quantum</em>, and <em>vs DWPC</em> still
-        use synthetic p-values and scaled effect placeholders until those baselines
-        ship paired OOF predictions in the API.
+        Rows marked <strong>illustrative p</strong> are scaffold placeholders —
+        pairing McNemar only applies when <code>pairedOof</code> is true (vs best
+        classical when OOF probs exist, and vs random predictor).
       </div>
       <div
         style={{
@@ -315,6 +315,7 @@ function StatComparisonRows({ rows }: { rows: StatComparisonRow[] }) {
 }
 
 function Row({ row }: { row: StatComparisonRow }) {
+  const illustrative = row.pairedOof !== true;
   const sigColor =
     row.significance === "highly-significant"
       ? "var(--green)"
@@ -325,13 +326,42 @@ function Row({ row }: { row: StatComparisonRow }) {
           : "var(--faint)";
   return (
     <>
-      <div style={{ color: "var(--ink)" }}>{row.label}</div>
+      <div style={{ color: "var(--ink)" }}>
+        {row.label}
+        {illustrative ? (
+          <span
+            style={{
+              marginLeft: 8,
+              fontSize: 9,
+              letterSpacing: "0.4px",
+              color: "var(--faint)",
+              textTransform: "uppercase",
+            }}
+          >
+            illustrative p
+          </span>
+        ) : null}
+      </div>
       <div style={{ fontFamily: "monospace" }}>
         {row.delta > 0 ? "+" : ""}
         {row.delta.toFixed(3)}
       </div>
-      <div style={{ fontFamily: "monospace" }}>{row.pValue.toFixed(4)}</div>
-      <div style={{ fontFamily: "monospace" }}>{row.effectSize.toFixed(3)}</div>
+      <div
+        style={{
+          fontFamily: "monospace",
+          opacity: illustrative ? 0.55 : 1,
+        }}
+      >
+        {row.pValue.toFixed(4)}
+      </div>
+      <div
+        style={{
+          fontFamily: "monospace",
+          opacity: illustrative ? 0.55 : 1,
+        }}
+      >
+        {row.effectSize.toFixed(3)}
+      </div>
       <div style={{ color: sigColor, fontWeight: 600 }}>{row.significance}</div>
     </>
   );

@@ -94,8 +94,9 @@ export function adaptAlgorithmsToGroups(
  *   2. Among those, prefer canonical default group orderings:
  *      - classical → "Classical baselines" → "Heuristic / metapath" → "KG embeddings"
  *      - hybrid    → "Hybrid quantum-classical" → "Quantum kernels" → "Variational quantum"
- *      - quantum   → "Variational quantum"
- *   3. Tiebreak by first-seen.
+ *   3. **quantum:** always returns `null` — the live dispatcher headline is quantum-kernel
+ *      QK-SVC (not variational catalog rows); RunPathChooser falls back to `defaultGeneralist`.
+ *   4. Tiebreak by first-seen.
  *
  * Stable: same input always yields the same recommendation.
  */
@@ -103,6 +104,8 @@ export function pickGeneralist(
   family: AlgoPathKind,
   groups: readonly CatalogGroup[],
 ): CatalogRow | null {
+  if (family === "quantum") return null;
+
   const groupOrder: Record<AlgoPathKind, string[]> = {
     classical: ["Classical baselines", "Heuristic / metapath", "KG embeddings"],
     hybrid: [
@@ -110,7 +113,7 @@ export function pickGeneralist(
       "Quantum kernels",
       "Variational quantum",
     ],
-    quantum: ["Variational quantum"],
+    quantum: [],
   };
   const preferred = groupOrder[family];
   // collect rows in this family across groups

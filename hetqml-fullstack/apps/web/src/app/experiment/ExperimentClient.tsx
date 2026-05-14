@@ -11,6 +11,7 @@ import {
 import { buildHeadlineLeaderboardRows } from "@/lib/experiment/headlineRows";
 import { deriveLede } from "@/lib/experiment/selectors";
 import { getLastJobId } from "@/lib/sessions/lastJob";
+import { RecentJobLinks } from "@/components/sessions/RecentJobLinks";
 import { HeadlineLeaderboard } from "@/components/experiment/HeadlineLeaderboard";
 import { MetricStrip } from "@/components/experiment/MetricStrip";
 import { SourceCheckPanel } from "@/components/experiment/SourceCheckPanel";
@@ -304,6 +305,7 @@ function EmptyState() {
           </Link>
         </div>
       </div>
+      <RecentJobLinks route="experiment" />
     </>
   );
 }

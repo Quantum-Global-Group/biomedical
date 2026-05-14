@@ -49,6 +49,12 @@ const SYSTEM = [
   { href: "/settings", icon: "⚙", title: "Settings" },
 ] as const;
 
+const DEMO_NAV = {
+  href: "/demo",
+  icon: "◇",
+  title: "Demo gallery",
+} as const;
+
 function navClass(active: string, href: string) {
   return `nav-item${active === href ? " active" : ""}`;
 }
@@ -111,7 +117,7 @@ export function Sidebar({ active }: SidebarProps) {
         </Link>
       ))}
       <div className="section-label">System</div>
-      {SYSTEM.map((item) => (
+      {(isLiteMode() ? SYSTEM : [...SYSTEM, DEMO_NAV]).map((item) => (
         <Link
           key={item.href}
           href={item.href}

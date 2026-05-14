@@ -55,7 +55,7 @@ export const RUN_PATH_FAMILIES: readonly RunFamily[] = [
     label: "Hybrid",
     preset: "Hybrid QSVC",
     summary:
-      "fast recommended default: quantum kernels plus classical baselines for parameter-efficient comparison.",
+      "Precomputed quantum kernel (ZZ feature map) + SVC on metapath features, evaluated on the local Aer simulator, with classical baselines for comparison.",
     runtime: "~2m",
     algorithms: "3 hybrid + 8 baselines",
     defaultGeneralist: {
@@ -69,13 +69,13 @@ export const RUN_PATH_FAMILIES: readonly RunFamily[] = [
     label: "Quantum",
     preset: "Quantum HW",
     summary:
-      "Hardware-validated path with QAOA / VQE and classical baselines. Best when reviewer evidence needs backend traces.",
+      "Same quantum-kernel headline trainer as Hybrid; uses IBM Quantum when Settings has token + CRN, otherwise falls back to Aer. Experiment labels SIM rows that are leaderboard scaffolding, not re-trained variational runs.",
     runtime: "~4m",
     algorithms: "2 quantum + 8 baselines",
     defaultGeneralist: {
-      name: "QAOA",
+      name: "QK-SVC (hardware path)",
       rationale:
-        "Cost+mixer Hamiltonian on hardware; produces backend traces a reviewer can audit.",
+        "Cross-validated precomputed kernel SVC — backend and shots reflect Aer or IBM from the Settings you provide.",
     },
   },
 ];

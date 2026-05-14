@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getJob, listDecisions, type DecisionRecord, type Job } from "@/lib/api/client";
 import { getLastJobId } from "@/lib/sessions/lastJob";
+import { RecentJobLinks } from "@/components/sessions/RecentJobLinks";
 import { useVisiblePoll } from "@/lib/polling/useVisiblePoll";
 import { useCatalogs } from "@/lib/data/useCatalogs";
 import { findCompoundEntryByName } from "@/lib/data/compoundLookup";
@@ -627,6 +628,7 @@ function EmptyState() {
           </Link>
         </div>
       </div>
+      <RecentJobLinks route="visualize" />
     </>
   );
 }

@@ -339,6 +339,7 @@ def _stat_comparison(
             p_value=round(p, 4),
             effect_size=round(abs(delta) * 4.5, 3),
             significance=sig,  # type: ignore[arg-type]
+            paired_oof=False,
         )
 
     if probs is None or algo is None:
@@ -372,6 +373,7 @@ def _stat_comparison(
             p_value=round(float(max(p_c, 1e-6)), 4),
             effect_size=eff_c,
             significance=significance_from_p(p_c),  # type: ignore[arg-type]
+            paired_oof=True,
         )
     else:
         # Classical headline or missing OOF reference: keep PR delta vs a
@@ -382,6 +384,7 @@ def _stat_comparison(
             p_value=1.0,
             effect_size=0.0,
             significance="ns",  # type: ignore[arg-type]
+            paired_oof=False,
         )
 
     # --- Row 5: vs naive prevalence-only probabilities (McNemar) ----------
@@ -396,6 +399,7 @@ def _stat_comparison(
         p_value=round(float(max(p_r, 1e-6)), 4),
         effect_size=eff_r,
         significance=significance_from_p(p_r),  # type: ignore[arg-type]
+        paired_oof=True,
     )
 
     return [
@@ -875,6 +879,139 @@ def _evidence_matrix(rng: random.Random) -> EvidenceMatrix:
     return EvidenceMatrix(
         cells=cells,
         summary=f"{supporting}/{len(cells)} layers supportive",
+        source="rng_demo",
+    )
+
+
+def _evidence_matrix_for_job(job: Job, algo: AlgoResult | None) -> EvidenceMatrix:
+    """Layer states from focal selection + run headline — not pairwise DWPC."""
+    sel = job.selection
+    cells: list[EvidenceMatrixCell] = []
+
+    mol_state = "supports" if (sel.compound and sel.disease) else "missing"
+    cells.append(
+        EvidenceMatrixCell(
+            layer="molecule",
+            state=mol_state,
+            note=f"Focal pair {sel.compound} ↔ {sel.disease}",
+        )
+    )
+
+    cells.append(
+        EvidenceMatrixCell(
+            layer="kg",
+            state="live",
+            note=f"Hetionet catalog context · {sel.metaedge}",
+        )
+    )
+
+    targets = _PRIMARY_TARGETS.get(sel.compound)
+    if targets is None:
+        mech_state = "fallback"
+        mech_note = (
+            "Primary-target mapping unavailable — mechanism posture neutral."
+        )
+    elif sel.gene in targets:
+        mech_state = "supports"
+        mech_note = (
+            f"Anchor {sel.gene} matches curated primary targets for {sel.compound}."
+        )
+    else:
+        mech_state = "weakens"
+        mech_note = (
+            f"Anchor {sel.gene} outside curated primary targets for {sel.compound}."
+        )
+
+    cells.append(
+        EvidenceMatrixCell(layer="mechanism", state=mech_state, note=mech_note)
+    )
+
+    cells.append(
+        EvidenceMatrixCell(
+            layer="clinical",
+            state="fallback",
+            note=(
+                "Clinical posture uses bundled catalog proxies until external "
+                "trial ingestion ships."
+            ),
+        )
+    )
+
+    if algo is None:
+        cls_state = "missing"
+        cls_note = "No headline CV payload yet."
+        q_state = "missing"
+        q_note = cls_note
+    else:
+        cls_state = "supports" if algo.family == "classical" else "live"
+        cls_note = "Classical baselines participate in every run path."
+        if algo.family == "classical":
+            q_state = "fallback"
+            q_note = "Quantum branch inactive when classical headline is selected."
+        elif algo.family == "hybrid":
+            q_state = "supports"
+            q_note = "Hybrid headline uses Aer-evaluated quantum kernel + OOF pairing."
+        else:
+            q_state = "supports"
+            q_note = (
+                "Quantum headline on IBM hardware"
+                if algo.used_real_hardware
+                else "Quantum headline on Aer fallback (token + CRN enable IBM)."
+            )
+
+    cells.append(
+        EvidenceMatrixCell(layer="classical", state=cls_state, note=cls_note)
+    )
+    cells.append(EvidenceMatrixCell(layer="quantum", state=q_state, note=q_note))
+
+    supporting = sum(1 for c in cells if c.state in ("live", "supports"))
+    return EvidenceMatrix(
+        cells=cells,
+        summary=f"{supporting}/{len(cells)} layers supportive",
+        source="focal_selection_heuristic",
+    )
+
+
+def _model_agreement_from_leaderboard(
+    leaderboard: list[LeaderboardRow],
+) -> ModelAgreement:
+    """Best PR-AUC per family from the scaffold roster — ties bars to leaderboard."""
+    best: dict[str, float] = {"classical": 0.0, "hybrid": 0.0, "quantum": 0.0}
+    for row in leaderboard:
+        fam = row.family
+        if row.pr_auc > best[fam]:
+            best[fam] = row.pr_auc
+
+    c = best["classical"]
+    h = best["hybrid"]
+    q = best["quantum"]
+    bars = [
+        ModelAgreementBar(family="classical", score=c, delta_reference=0.0),
+        ModelAgreementBar(
+            family="hybrid",
+            score=h,
+            delta_reference=round(h - c, 3),
+        ),
+        ModelAgreementBar(
+            family="quantum",
+            score=q,
+            delta_reference=round(q - c, 3),
+        ),
+    ]
+    spread = round(max(b.score for b in bars) - min(b.score for b in bars), 3)
+    mean = round(sum(b.score for b in bars) / len(bars), 3)
+    if spread < 0.04:
+        verdict = "STRONG_AGREEMENT"
+    elif spread < 0.10:
+        verdict = "PARTIAL_DIVERGENCE"
+    else:
+        verdict = "BRANCH_DIVERGENCE"
+    return ModelAgreement(
+        bars=bars,
+        spread=spread,
+        mean=mean,
+        verdict=verdict,  # type: ignore[arg-type]
+        leaderboard_derived=True,
     )
 
 
@@ -901,10 +1038,21 @@ def _model_agreement(rng: random.Random) -> ModelAgreement:
         verdict = "PARTIAL_DIVERGENCE"
     else:
         verdict = "BRANCH_DIVERGENCE"
-    return ModelAgreement(bars=bars, spread=spread, mean=mean, verdict=verdict)  # type: ignore[arg-type]
+    return ModelAgreement(
+        bars=bars,
+        spread=spread,
+        mean=mean,
+        verdict=verdict,  # type: ignore[arg-type]
+        leaderboard_derived=False,
+    )
 
 
-def _provenance(rng: random.Random, job: Job) -> list[ProvenanceEvent]:
+def _provenance(
+    rng: random.Random,
+    job: Job,
+    *,
+    algo: AlgoResult | None,
+) -> list[ProvenanceEvent]:
     base = job.created_at
     events = [
         ("Hetionet snapshot loaded", "hetionet/v1.0/edges.tsv", False),
@@ -928,7 +1076,11 @@ def _provenance(rng: random.Random, job: Job) -> list[ProvenanceEvent]:
                 timestamp=ts.strftime("%H:%M:%S UTC"),
                 label=label,
                 source=source,
-                fallback=fallback or rng.random() < 0.1,
+                fallback=(
+                    False
+                    if algo is not None
+                    else (fallback or rng.random() < 0.1)
+                ),
             )
         )
     return out
@@ -1133,9 +1285,17 @@ def simulate_run(
         selection=job.selection,
         detailed=detailed,
     )
-    matrix = _evidence_matrix(rng)
-    agreement = _model_agreement(rng)
-    provenance = _provenance(rng, job)
+    matrix = (
+        _evidence_matrix_for_job(job, algo)
+        if algo is not None
+        else _evidence_matrix(rng)
+    )
+    agreement = (
+        _model_agreement_from_leaderboard(leaderboard)
+        if algo is not None
+        else _model_agreement(rng)
+    )
+    provenance = _provenance(rng, job, algo=algo)
     quality = _quality_flags(rng, metrics)
     overlays = _evidence_overlays(job)
     interpretation = _interpretation(rng, job.run_path.family)
