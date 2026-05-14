@@ -7,10 +7,12 @@
 # the deps stage falls back to a fresh resolve. Versions are pinned in
 # package.json for determinism. If you need the lockfile baked in, set the
 # build context to repo root (move fly.toml up + adjust paths).
+#
+# Use Node 22+ images: Next.js 16 touches the `node:sqlite` built-in during `next build`.
 
 ARG NEXT_PUBLIC_API_URL=http://localhost:8000
 
-FROM node:20-alpine AS deps
+FROM node:24-alpine AS deps
 WORKDIR /app
 RUN corepack enable
 COPY package.json pnpm-lock.yaml* ./
@@ -19,7 +21,7 @@ COPY package.json pnpm-lock.yaml* ./
 # is documented above.
 RUN pnpm install --frozen-lockfile || pnpm install
 
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 WORKDIR /app
 RUN corepack enable
 ARG NEXT_PUBLIC_API_URL
@@ -29,7 +31,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN pnpm build
 
-FROM node:20-alpine AS runner
+FROM node:24-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
