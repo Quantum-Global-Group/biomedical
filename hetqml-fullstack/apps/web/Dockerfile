@@ -14,7 +14,9 @@ ARG NEXT_PUBLIC_API_URL=http://localhost:8000
 
 FROM node:24-alpine AS deps
 WORKDIR /app
-RUN corepack enable
+# Match monorepo `packageManager` so Corepack does not pull pnpm 11 (blocks
+# postinstall for sharp/esbuild without `pnpm approve-builds`).
+RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
 COPY package.json pnpm-lock.yaml* ./
 # Frozen if the lockfile made it in; otherwise resolve fresh against the
 # pinned package.json. The `|| pnpm install` mirrors prior behaviour and
@@ -23,7 +25,7 @@ RUN pnpm install --frozen-lockfile || pnpm install
 
 FROM node:24-alpine AS builder
 WORKDIR /app
-RUN corepack enable
+RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_TELEMETRY_DISABLED=1
