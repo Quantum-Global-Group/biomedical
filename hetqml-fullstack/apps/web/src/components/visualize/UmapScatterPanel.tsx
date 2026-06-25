@@ -15,6 +15,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { JobResult } from "@/lib/api/client";
+import { TraceId } from "@/components/common/TraceId";
 import { emitVizSync } from "@/lib/visualize/syncBus";
 
 const IS_LITE = process.env.NEXT_PUBLIC_LITE_MODE === "true";
@@ -66,6 +67,8 @@ export function UmapScatterPanel({
     "idle",
   );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  /** Underlying error object so the request id trace can be shown. */
+  const [errorCause, setErrorCause] = useState<unknown>(null);
   // Cursor tooltip — uses a ref so we don't repaint the whole panel on
   // every mouse move. The DOM node is owned by the canvas overlay.
   const tooltipRef = useRef<HTMLDivElement>(null);
@@ -131,6 +134,7 @@ export function UmapScatterPanel({
     let cleanup: (() => void) | null = null;
     setPhase("loading");
     setErrorMessage(null);
+    setErrorCause(null);
 
     import("three")
       .then((THREE) => {
@@ -349,6 +353,7 @@ export function UmapScatterPanel({
       .catch((err: unknown) => {
         if (cancelled) return;
         setPhase("error");
+        setErrorCause(err);
         setErrorMessage(err instanceof Error ? err.message : String(err));
       });
 
@@ -458,6 +463,11 @@ export function UmapScatterPanel({
                 `Unable to render WebGL scatter — ${errorMessage ?? "unknown error"}`}
               {phase === "idle" && "preparing scatter plot…"}
             </span>
+            {phase === "error" ? (
+              <span style={{ marginTop: 8 }}>
+                <TraceId err={errorCause} />
+              </span>
+            ) : null}
             {phase === "no-data" && scatterGapExplanation && (
               <span
                 style={{

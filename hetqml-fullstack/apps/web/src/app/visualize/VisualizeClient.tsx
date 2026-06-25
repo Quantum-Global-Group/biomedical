@@ -4,6 +4,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getJob, listDecisions, type DecisionRecord, type Job } from "@/lib/api/client";
+import { TraceId } from "@/components/common/TraceId";
 import { getLastJobId } from "@/lib/sessions/lastJob";
 import { RecentJobLinks } from "@/components/sessions/RecentJobLinks";
 import { useVisiblePoll } from "@/lib/polling/useVisiblePoll";
@@ -65,6 +66,7 @@ export function VisualizeClient({
   const [jobId, setJobId] = useState<string | null>(jobIdFromUrl);
   const [job, setJob] = useState<Job | null>(initialJob);
   const [error, setError] = useState<string | null>(null);
+  const [errorObj, setErrorObj] = useState<unknown>(null);
   // Loading is true only when we have a jobId but no job hydrated yet —
   // i.e. the server fetch failed and we need a client retry.
   const [loading, setLoading] = useState(
@@ -97,8 +99,10 @@ export function VisualizeClient({
         if (cancelled) return;
         setJob(j);
         setError(null);
+        setErrorObj(null);
       } catch (err) {
         if (cancelled) return;
+        setErrorObj(err);
         setError(err instanceof Error ? err.message : String(err));
       } finally {
         if (!cancelled) setLoading(false);
@@ -328,7 +332,10 @@ export function VisualizeClient({
     return (
       <Header step="04 · VISUALIZE" title="Could not load job">
         <div className="panel">
-          <div className="skeptic-warning">{error}</div>
+          <div className="skeptic-warning">
+            {error}
+            <TraceId err={errorObj} />
+          </div>
           <Link className="btn" href="/initialize" style={{ marginTop: 16 }}>
             ← Back to Initialize
           </Link>

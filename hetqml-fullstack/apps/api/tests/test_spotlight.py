@@ -5,8 +5,6 @@ from __future__ import annotations
 import random
 from datetime import UTC, datetime
 
-import pytest
-
 from hetqml_api.ml.spotlight import try_build_catalog_candidate_spotlight
 from hetqml_api.schemas import Job, JobMetrics, RunPath, Selection
 

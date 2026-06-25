@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from hetqml_api.jobs.demo_jobs import DEMO_JOB_SPECS, materialize_demo_job
 
 

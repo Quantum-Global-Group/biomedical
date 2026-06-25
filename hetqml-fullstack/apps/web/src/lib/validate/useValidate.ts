@@ -46,6 +46,9 @@ export interface ValidateState {
   /** Recent global decisions (last 50), for the history panel. */
   recentDecisions: DecisionRecord[];
   decisionsError: string | null;
+  /** Underlying error object (e.g. `ApiError`) so UI can show the
+   *  request id trace from the `X-Request-ID` response header. */
+  decisionsErrorCause: unknown;
   decisionPending: boolean;
 
   /** Server-side note body (or cached fallback) for the current pair. */
@@ -258,6 +261,7 @@ export function useValidate(options: UseValidateOptions = {}): ValidateState {
   const [pairDecisions, setPairDecisions] = useState<DecisionRecord[]>([]);
   const [recentDecisions, setRecentDecisions] = useState<DecisionRecord[]>([]);
   const [decisionsError, setDecisionsError] = useState<string | null>(null);
+  const [decisionsErrorCause, setDecisionsErrorCause] = useState<unknown>(null);
   const [decisionPending, setDecisionPending] = useState(false);
 
   const refreshDecisions = useCallback(async () => {
@@ -272,6 +276,7 @@ export function useValidate(options: UseValidateOptions = {}): ValidateState {
         setPairDecisions([]);
       }
     } catch (err) {
+      setDecisionsErrorCause(err);
       setDecisionsError(err instanceof Error ? err.message : String(err));
     }
   }, [pairKey]);
@@ -361,7 +366,9 @@ export function useValidate(options: UseValidateOptions = {}): ValidateState {
         await createDecision(input);
         await refreshDecisions();
         setDecisionsError(null);
+        setDecisionsErrorCause(null);
       } catch (err) {
+        setDecisionsErrorCause(err);
         setDecisionsError(err instanceof Error ? err.message : String(err));
       } finally {
         setDecisionPending(false);
@@ -494,6 +501,7 @@ export function useValidate(options: UseValidateOptions = {}): ValidateState {
     pairDecisions,
     recentDecisions,
     decisionsError,
+    decisionsErrorCause,
     decisionPending,
 
     noteBody,

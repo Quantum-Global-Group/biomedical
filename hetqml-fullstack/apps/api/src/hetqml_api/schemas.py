@@ -33,7 +33,7 @@ class Selection(BaseModel):
 
 class RunPath(BaseModel):
     mode: Literal["quick", "custom"] = "quick"
-    family: Literal["classical", "hybrid", "quantum"] = "hybrid"
+    family: Literal["classical", "hybrid", "quantum", "stacking"] = "hybrid"
 
 
 class RunInvestigationRequest(BaseModel):
@@ -501,7 +501,7 @@ class AppearanceSettings(CamelModel):
 
 
 class PipelineSettings(CamelModel):
-    default_run_path: Literal["classical", "hybrid", "quantum"] = "hybrid"
+    default_run_path: Literal["classical", "hybrid", "quantum", "stacking"] = "hybrid"
     default_metaedge: str = "CtD"
     hard_negative_ratio: Literal["1:3", "1:5", "1:10"] = "1:5"
     strict_posture: bool = True

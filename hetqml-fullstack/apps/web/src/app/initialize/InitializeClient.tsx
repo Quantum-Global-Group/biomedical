@@ -20,6 +20,7 @@ import { EvidencePosturePanel } from "@/components/initialize/EvidencePosturePan
 import { HetionetStatsBadge } from "@/components/initialize/HetionetStatsBadge";
 import { MiniKgPreview } from "@/components/initialize/MiniKgPreview";
 import { SessionPanel } from "@/components/initialize/SessionPanel";
+import { TraceId } from "@/components/common/TraceId";
 import { useCatalogs } from "@/lib/data/useCatalogs";
 import { HETIONET_TOTALS } from "@/lib/data/hetionetTotals";
 import type { InitialCatalogs } from "@/lib/data/fetchCatalogsServer";
@@ -47,6 +48,7 @@ export function InitializeClient({
   });
   const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorObj, setErrorObj] = useState<unknown>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const catalogs = useCatalogs({ initial: initialCatalogs });
@@ -129,6 +131,7 @@ export function InitializeClient({
   const handleRun = async () => {
     setSubmitting(true);
     setError(null);
+    setErrorObj(null);
     setJob(null);
     try {
       const created = await startInvestigation({ selection, runPath });
@@ -144,6 +147,7 @@ export function InitializeClient({
             : undefined,
       });
     } catch (err) {
+      setErrorObj(err);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setSubmitting(false);
@@ -288,6 +292,7 @@ export function InitializeClient({
         {error ? (
           <div className="skeptic-warning" style={{ marginTop: 14 }}>
             {error}
+            <TraceId err={errorObj} />
           </div>
         ) : null}
         {job ? <JobView job={job} /> : null}

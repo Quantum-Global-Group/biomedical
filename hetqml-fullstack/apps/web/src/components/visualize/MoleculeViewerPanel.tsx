@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getMoleculeSdf } from "@/lib/api/client";
+import { TraceId } from "@/components/common/TraceId";
 import { findCompoundEntryByName } from "@/lib/data/compoundLookup";
 import { useCatalogs } from "@/lib/data/useCatalogs";
 import { emitVizSync } from "@/lib/visualize/syncBus";
@@ -80,6 +81,9 @@ export function MoleculeViewerPanel({ compound, disease, autoSync }: Props) {
     "idle" | "loading" | "ready" | "error" | "no-cid"
   >("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  /** Underlying error object (e.g. `ApiError`) so UI can show the
+   *  request id trace from the `X-Request-ID` response header. */
+  const [errorCause, setErrorCause] = useState<unknown>(null);
   /** Whether failure happened before SDF fetch (3Dmol chunk) vs API/PubChem. */
   const [errorKind, setErrorKind] = useState<"engine" | "sdf" | null>(null);
 
@@ -116,6 +120,7 @@ export function MoleculeViewerPanel({ compound, disease, autoSync }: Props) {
     let resizeRo: ResizeObserver | null = null;
     setPhase("loading");
     setErrorMessage(null);
+    setErrorCause(null);
     setErrorKind(null);
 
     (async () => {
@@ -143,6 +148,7 @@ export function MoleculeViewerPanel({ compound, disease, autoSync }: Props) {
           if (cancelled) return;
           setPhase("error");
           setErrorKind("sdf");
+          setErrorCause(err);
           setErrorMessage(
             err instanceof Error ? err.message : String(err),
           );
@@ -185,6 +191,7 @@ export function MoleculeViewerPanel({ compound, disease, autoSync }: Props) {
             msg,
           );
         setErrorKind(looksEngine ? "engine" : "sdf");
+        setErrorCause(err);
         setErrorMessage(msg);
       }
     })();
@@ -381,6 +388,31 @@ export function MoleculeViewerPanel({ compound, disease, autoSync }: Props) {
             {phase === "idle" && "preparing viewer…"}
           </div>
         )}
+        {phase === "error" ? (
+          <div
+            style={{
+              position: "absolute",
+              left: 0,
+              right: 0,
+              bottom: 12,
+              display: "flex",
+              justifyContent: "center",
+            }}
+          >
+            <div
+              style={{
+                background: "rgba(0,0,0,0.55)",
+                padding: "6px 10px",
+                borderRadius: 3,
+                fontSize: 11,
+                color: "var(--ink, #E8E0D6)",
+                fontFamily: "var(--font-mono), monospace",
+              }}
+            >
+              <TraceId err={errorCause} />
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <div className="panel-footer" style={{ marginTop: 12 }}>

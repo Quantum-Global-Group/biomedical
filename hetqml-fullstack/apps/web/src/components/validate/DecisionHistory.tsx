@@ -1,6 +1,7 @@
 "use client";
 
 import type { DecisionRecord } from "@/lib/api/client";
+import { TraceId } from "@/components/common/TraceId";
 
 interface Props {
   decisions: readonly DecisionRecord[];
@@ -8,6 +9,8 @@ interface Props {
   activePairKey: string | null;
   onSelect: (record: DecisionRecord) => void;
   error: string | null;
+  /** Underlying error object so the trace id can be surfaced. */
+  errorCause?: unknown;
 }
 
 function color(verdict: DecisionRecord["verdict"]): string {
@@ -26,6 +29,7 @@ export function DecisionHistory({
   activePairKey,
   onSelect,
   error,
+  errorCause,
 }: Props) {
   const counts = {
     keep: decisions.filter((d) => d.verdict === "keep").length,
@@ -84,6 +88,7 @@ export function DecisionHistory({
         <div className="skeptic-warning">
           <span style={{ color: "var(--sienna)" }}>⚠</span>
           <span>Failed to load decisions: {error}</span>
+          <TraceId err={errorCause} />
         </div>
       ) : null}
 

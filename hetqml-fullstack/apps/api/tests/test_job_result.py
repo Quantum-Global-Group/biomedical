@@ -75,7 +75,7 @@ async def test_completed_job_emits_full_result(client):
         assert ci["ciLow"] <= ci["value"] <= ci["ciHigh"]
 
     # leaderboard
-    assert len(result["leaderboard"]) == 13
+    assert len(result["leaderboard"]) == 15
     assert sum(1 for r in result["leaderboard"] if r["isTop"]) == 1
     row_statuses = [r["rowStatus"] for r in result["leaderboard"]]
     assert set(row_statuses) <= {"RUN", "SIM"}
@@ -83,12 +83,12 @@ async def test_completed_job_emits_full_result(client):
     # With a real AlgoResult splice: exactly one RUN (path-aware top). Under
     # synthetic_only test harnesses: all SIM — still an honest, stable contract.
     if row_statuses.count("RUN") == 1:
-        assert row_statuses.count("SIM") == 12
+        assert row_statuses.count("SIM") == 14
     else:
-        assert row_statuses.count("SIM") == 13
+        assert row_statuses.count("SIM") == 15
 
     # benchmark rows mirror leaderboard length and carry every tab's cells
-    assert len(result["benchmarkRows"]) == 13
+    assert len(result["benchmarkRows"]) == 15
     assert all(row["status"] == "SIM" for row in result["benchmarkRows"])
     cells = result["benchmarkRows"][0]["cells"]
     for key in (

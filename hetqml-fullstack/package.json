@@ -7,10 +7,12 @@
     "dev:api": "sh -c 'cd apps/api && uv run uvicorn hetqml_api.main:app --reload --host 0.0.0.0 --port \"${HETQML_API_PORT:-8000}\"'",
     "test:web": "pnpm --filter hetqml-web test",
     "test:api": "cd apps/api && uv run pytest",
+    "test:api:fast": "cd apps/api && uv run pytest --ignore=tests/test_stacking.py --ignore=tests/test_rgcn_transe.py --ignore=tests/test_demo_jobs_materialize.py --ignore=tests/test_hetionet.py --ignore=tests/test_hetionet_features.py",
     "test:e2e": "pnpm --filter hetqml-web test:e2e",
     "test": "pnpm test:web && pnpm test:api",
-    "verify": "pnpm --filter hetqml-web typecheck && pnpm test:web && pnpm test:api",
+    "verify": "pnpm --filter hetqml-web typecheck && pnpm test:web && pnpm test:api:fast && cd apps/api && uv run ruff check",
     "verify:lint": "pnpm --filter hetqml-web lint && pnpm verify",
+    "verify:ci": "pnpm --filter hetqml-web typecheck && pnpm --filter hetqml-web lint && pnpm test:web && cd apps/api && uv run ruff check && uv run pytest",
     "build:web": "pnpm --filter hetqml-web build"
   },
   "packageManager": "pnpm@9.12.0"

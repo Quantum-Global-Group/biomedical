@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { getJob, type Job } from "@/lib/api/client";
+import { TraceId } from "@/components/common/TraceId";
 import { useDashboardMode } from "@/lib/dashboardMode/DashboardModeProvider";
 import {
   HEADLINE_CONFIG,
@@ -52,6 +53,7 @@ export function ExperimentClient({
   const [jobId, setJobId] = useState<string | null>(jobIdFromUrl);
   const [job, setJob] = useState<Job | null>(initialJob);
   const [error, setError] = useState<string | null>(null);
+  const [errorObj, setErrorObj] = useState<unknown>(null);
   // Loading is true only when we have a jobId but no hydrated job yet —
   // i.e. the server fetch failed and we need a client retry.
   const [loading, setLoading] = useState(
@@ -80,8 +82,10 @@ export function ExperimentClient({
         if (cancelled) return;
         setJob(j);
         setError(null);
+        setErrorObj(null);
       } catch (err) {
         if (cancelled) return;
+        setErrorObj(err);
         setError(err instanceof Error ? err.message : String(err));
       } finally {
         if (!cancelled) setLoading(false);
@@ -144,7 +148,10 @@ export function ExperimentClient({
   if (error && !job) {
     return (
       <div className="panel">
-        <div className="skeptic-warning">{error}</div>
+        <div className="skeptic-warning">
+          {error}
+          <TraceId err={errorObj} />
+        </div>
         <Link className="btn" href="/initialize" style={{ marginTop: 16 }}>
           ← Back to Initialize
         </Link>

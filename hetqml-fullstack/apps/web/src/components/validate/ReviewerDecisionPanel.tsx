@@ -1,6 +1,7 @@
 "use client";
 
 import type { DecisionRecord, DecisionVerdict } from "@/lib/api/client";
+import { TraceId } from "@/components/common/TraceId";
 
 interface Props {
   pairKey: string;
@@ -8,6 +9,9 @@ interface Props {
   /** Most recent decision for this pair (highest in the pair-decisions list). */
   latestDecision: DecisionRecord | null;
   error: string | null;
+  /** Underlying error object (e.g. `ApiError`) so the trace id can be
+   *  surfaced alongside the human-readable message. */
+  errorCause?: unknown;
   onSubmit: (verdict: DecisionVerdict) => void;
 }
 
@@ -29,6 +33,7 @@ export function ReviewerDecisionPanel({
   pending,
   latestDecision,
   error,
+  errorCause,
   onSubmit,
 }: Props) {
   return (
@@ -103,6 +108,7 @@ export function ReviewerDecisionPanel({
         <div className="skeptic-warning" style={{ marginTop: 12 }}>
           <span style={{ color: "var(--sienna)" }}>⚠</span>
           <span>Failed to save decision: {error}</span>
+          <TraceId err={errorCause} />
         </div>
       ) : null}
 

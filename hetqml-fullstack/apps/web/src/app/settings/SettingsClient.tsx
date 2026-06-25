@@ -23,6 +23,7 @@ import type { InitialSettings } from "@/lib/data/fetchSettingsServer";
 import { DEFAULT_SETTINGS } from "@/lib/settings/defaults";
 import { citationLine, versionLabel } from "@/lib/branding";
 import { isLiteMode, useRemoteApiInLite } from "@/lib/liteMode";
+import { TraceId } from "@/components/common/TraceId";
 
 const IS_LITE = isLiteMode();
 const LITE_REMOTE_API = IS_LITE && useRemoteApiInLite();
@@ -116,7 +117,7 @@ type SaveStatus =
   | { kind: "idle" }
   | { kind: "saving" }
   | { kind: "saved"; at: Date }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string; cause?: unknown };
 
 function eq(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
@@ -352,6 +353,7 @@ export function SettingsClient({ initial }: { initial: InitialSettings }) {
         setStatus({
           kind: "error",
           message: `Settings API: ${e instanceof Error ? e.message : String(e)}`,
+          cause: e,
         });
       });
     return () => {
@@ -392,6 +394,7 @@ export function SettingsClient({ initial }: { initial: InitialSettings }) {
       setStatus({
         kind: "error",
         message: e instanceof Error ? e.message : String(e),
+        cause: e,
       });
     }
   }, [draft]);
@@ -637,6 +640,7 @@ export function SettingsClient({ initial }: { initial: InitialSettings }) {
           style={{ marginTop: 14, borderColor: "var(--sienna)" }}
         >
           Save failed: {status.message}
+          <TraceId err={status.cause} />
         </div>
       ) : null}
 

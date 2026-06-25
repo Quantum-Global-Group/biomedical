@@ -258,6 +258,7 @@ export function ValidateClient({
           pending={v.decisionPending}
           latestDecision={latestDecisionForPair}
           error={v.decisionsError}
+          errorCause={v.decisionsErrorCause}
           onSubmit={(verdict) => void v.submitDecision(verdict)}
         />
 
@@ -294,6 +295,7 @@ export function ValidateClient({
         activePairKey={v.pairKey}
         onSelect={v.selectPair}
         error={v.decisionsError}
+        errorCause={v.decisionsErrorCause}
       />
 
       <div className="how-to">

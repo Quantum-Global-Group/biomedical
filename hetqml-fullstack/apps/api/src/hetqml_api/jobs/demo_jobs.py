@@ -19,16 +19,17 @@ DEMO_SELECTION = Selection(
     metaedge="CtD · Compound–treats–Disease",
 )
 
-DEMO_JOB_SPECS: tuple[tuple[str, Literal["classical", "hybrid", "quantum"]], ...] = (
+DEMO_JOB_SPECS: tuple[tuple[str, Literal["classical", "hybrid", "quantum", "stacking"]], ...] = (
     ("hetqml-demo-classical-v1", "classical"),
     ("hetqml-demo-hybrid-v1", "hybrid"),
     ("hetqml-demo-quantum-aer-v1", "quantum"),
+    ("hetqml-demo-stacking-v1", "stacking"),
 )
 
 
 def materialize_demo_job(
     job_id: str,
-    family: Literal["classical", "hybrid", "quantum"],
+    family: Literal["classical", "hybrid", "quantum", "stacking"],
 ) -> Job:
     """Run real dispatcher + simulate_run synchronously — matches production envelopes."""
     t0 = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)

@@ -1,13 +1,19 @@
 """Feature matrix construction for the HetQML binary-classification pipeline.
 
-Two backends (select with ``HETQML_FEATURE_MATRIX_SOURCE``):
+Three backends (select with ``HETQML_FEATURE_MATRIX_SOURCE``):
 
-1. **catalog** (default) — Hetionet-informed rows built from bundled catalog
+1. **hetionet** — Real DWPC (Degree-Weighted Path Count) metapath features
+   computed from a Hetionet edge export (path via
+   ``HETQML_HETIONET_EDGES_PATH``). Hard negatives sampled at the
+   preregistered 1:5 ratio (§5.1). Falls back to ``catalog`` when no edge
+   file is available.
+
+2. **catalog** (default) — Hetionet-informed rows built from bundled catalog
    entries plus published Hetionet v1.0 metaedge edge totals (see
    ``ml.catalog_features``). Labels encode whether a row is the focal
    compound–disease pair vs a random catalog pair.
 
-2. **synthetic** — Legacy Gaussian demo matrix (deterministic per selection).
+3. **synthetic** — Legacy Gaussian demo matrix (deterministic per selection).
    Use for A/B debugging or when you explicitly want the old behaviour.
 
 Downstream classical / hybrid / quantum scorers only require ``X``, ``y``,
@@ -26,13 +32,15 @@ import numpy as np
 from hetqml_api.schemas import Selection
 
 from . import catalog_features as _catalog_features
+from . import hetionet_features as _hetionet_features
 
 # Number of features the classical/hybrid/quantum pipelines all see. Kept
 # small (8) so the quantum kernel cost stays tractable. Must match
-# ``FEATURE_DIM`` in ``catalog_features.py``.
+# ``FEATURE_DIM`` in ``catalog_features.py`` and ``hetionet_features.py``.
 N_FEATURES = 8
 
 assert _catalog_features.FEATURE_DIM == N_FEATURES
+assert _hetionet_features.FEATURE_DIM == N_FEATURES
 
 
 @dataclass(frozen=True)
@@ -41,13 +49,15 @@ class FeatureMatrix:
     y: np.ndarray  # shape (n_samples,) — binary 0/1
     feature_names: list[str]
     selection_seed: int
-    source: Literal["synthetic", "catalog"] = "synthetic"
+    source: Literal["synthetic", "catalog", "hetionet"] = "synthetic"
 
 
-def _feature_matrix_source() -> Literal["catalog", "synthetic"]:
+def _feature_matrix_source() -> Literal["hetionet", "catalog", "synthetic"]:
     raw = os.environ.get("HETQML_FEATURE_MATRIX_SOURCE", "catalog").strip().lower()
     if raw in ("synthetic", "gaussian", "legacy"):
         return "synthetic"
+    if raw in ("hetionet", "dwpc", "real"):
+        return "hetionet"
     return "catalog"
 
 
@@ -105,9 +115,31 @@ def _synthetic_feature_matrix(selection: Selection, *, n_samples: int) -> Featur
 
 
 def build_features(selection: Selection, *, n_samples: int = 200) -> FeatureMatrix:
-    """Binary-classification feature matrix keyed on ``selection``."""
+    """Binary-classification feature matrix keyed on ``selection``.
+
+    Source priority: ``hetionet`` → ``catalog`` → ``synthetic``. The
+    hetionet backend requires ``HETQML_HETIONET_EDGES_PATH`` to point at
+    a valid Hetionet edges TSV; otherwise it falls back to catalog.
+    """
     seed = _selection_seed(selection)
-    if _feature_matrix_source() == "catalog":
+    source = _feature_matrix_source()
+
+    if source == "hetionet":
+        built = _hetionet_features.try_build_hetionet_feature_matrix(
+            selection, n_samples=n_samples, seed=seed
+        )
+        if built is not None:
+            x, y, names = built
+            return FeatureMatrix(
+                X=x,
+                y=y,
+                feature_names=names,
+                selection_seed=seed,
+                source="hetionet",
+            )
+        # Fall back to catalog when no edge file is loaded.
+
+    if source in ("hetionet", "catalog"):
         built = _catalog_features.try_build_catalog_feature_matrix(
             selection, n_samples=n_samples, seed=seed
         )
@@ -129,11 +161,19 @@ def build_features_for_candidates(
 ) -> np.ndarray:
     """Feature vectors for ``(compound_display, disease_display)`` pairs.
 
-    Uses the focal selection's anchor gene and metaedge. When catalog mode is
-    active and every pair resolves, rows are Hetionet-informed scalars;
-    otherwise falls back to the legacy per-pair Gaussian hash rows.
+    Uses the focal selection's anchor gene and metaedge. When hetionet mode
+    is active and every pair resolves, rows are real DWPC metapath scalars;
+    otherwise falls back to catalog features, then to the legacy per-pair
+    Gaussian hash rows.
     """
-    if _feature_matrix_source() == "catalog":
+    source = _feature_matrix_source()
+
+    if source == "hetionet":
+        real = _hetionet_features.hetionet_feature_rows_for_pairs(selection, candidates)
+        if real is not None:
+            return real
+
+    if source in ("hetionet", "catalog"):
         real = _catalog_features.catalog_feature_rows_for_pairs(selection, candidates)
         if real is not None:
             return real

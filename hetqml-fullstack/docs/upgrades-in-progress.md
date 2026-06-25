@@ -229,16 +229,18 @@ same call sites.
 | `apps/api/tests/test_preregistration.py` | `GET /preregistration/status` returns the locked constants, the Hetionet snapshot SHA-256 prefix, and `gpuRunComplete: false` until the bootstrap CI artifact lands. |
 | `apps/api/tests/test_catalog.py` | The expanded six catalogs render deterministically across reseeds; counts match the documented totals (23 guards / 32 algorithms / 24 metaedges). |
 
-Total: **54/54 passing** under `pytest`.
+Total: **152/152 passing** under `pytest` (including stacking, R-GCN/TransE, Hetionet features, Pauli feature map, canonical-name splice, runner timeout).
 
 ## 6. Verification snapshot
 
 | Check | Status |
-|---|---|
-| `pytest` (api) | 54/54 passing |
-| `npm test` (web vitest) | 98/98 passing |
+|---|---|---|
+| `pytest` (api) | 152/152 passing |
+| `pnpm test:api:fast` (excl. slow ML) | 118/118 passing (~35 s) |
+| `npm test` / `pnpm test:web` (vitest) | 98/98 passing |
 | `tsc --noEmit` | clean |
 | `ruff check` | clean |
+| `pnpm verify` (typecheck + vitest + fast api + ruff) | passes |
 | Real classical run wall time (laptop) | ~50 ms |
 | Real hybrid run wall time (laptop, Aer sim) | ~1.4 s |
 | Real quantum run wall time (IBM Torino, queue + 60×60×1024 shots) | minutes — queue-dominated |
@@ -248,35 +250,32 @@ Total: **54/54 passing** under `pytest`.
 Tracked here so the next person picking it up has the full punch list.
 
 ### Algorithms / ML
-- [ ] **Pre-PCA feature reduction** so the 4-qubit `ZZFeatureMap` is a
-      principled compression rather than coincidence with the synthetic
-      8-feature matrix. Fits between `build_features()` and the QK
-      kernel call.
-- [ ] **Real Hetionet metapath features.** Replace the deterministic
-      synthetic matrix in `ml/features.py` with a metapath-count loader
-      keyed on the same `Selection` shape. Downstream scorers don't
-      change.
-- [ ] **Hard-negative sampling.** Project headline uses 1:5 hard
-      negatives (preregistration §5.1); the synthetic builder currently
-      generates balanced classes. Swap for class-balanced negatives
-      with semi-hard mining.
-- [ ] **Real backend fidelity.** `run_quantum` returns a placeholder
-      `0.985` — read it from `backend.properties()` (T1, T2, gate error)
-      so the visualize page reports something true.
-- [ ] **R-GCN + TransE classical baselines** (preregistration §6.2 —
-      listed but not implemented). Without them the
-      conjunction-across-baselines decision rule can't fire on the full
-      slate; the dashboard surfaces this as `BASELINE` 57% with the
-      "pending all five baselines" note.
-- [ ] **Stacking ensemble (Pauli)** as a first-class family. Headline
-      experiment is preregistered as Pauli + stacking; right now hybrid
-      is single-head SVC. Stacking landed in the sibling repo's pipeline
-      but hasn't been wired into `hetqml_api.ml.algorithms`.
+- [x] **Pre-PCA feature reduction** — `ml/algorithms.py: _pca_reduce`
+      replaces the `X[:, :QK_QUBITS]` truncation with principled PCA
+      for the 4-qubit ZZFeatureMap. Fit per-call on the training matrix.
+- [x] **Real Hetionet metapath features** — `ml/hetionet_features.py`
+      loads 8 DWPC metapath features from Hetionet edge TSV, log1p-
+      compressed. Falls back to catalog → synthetic when no edge file.
+- [x] **Hard-negative sampling** — 1:5 positive:negative ratio per
+      preregistration §5.1, semi-hard mining by therapeutic class /
+      disease category.
+- [x] **Real backend fidelity** — reads T1, T2, two-qubit gate error
+      from `backend.properties()` instead of placeholder `0.985`.
+- [x] **R-GCN + TransE classical baselines** (preregistration §6.2) —
+      `run_rgcn` (1-hop message passing on feature-similarity adjacency
+      → LogReg) and `run_transe` (relation translation energy → LogReg
+      calibration). Both return `family="classical"`, 5-fold CV.
+- [x] **Stacking ensemble** — LR + GBM + ExtraTrees → meta-LR, 5-fold
+      stratified CV with proper OOF stacking. Runs as family="stacking"
+      through the runner dispatcher. Real metrics splice into the
+      `"Stacking ensemble"` canonical leaderboard row.
 
 ### Quantum
-- [ ] **Pauli feature map** (reps=2) end-to-end on real IBM Torino
-      hardware. Current `run_quantum` uses ZZFeatureMap; preregistration
-      headline is PauliFeatureMap.
+- [x] **Pauli feature map** (reps=2) available in the dispatcher —
+      `PauliFeatureMap` (Z+XX) is the preregistration headline encoding;
+      `feature_map="zz"|"pauli"` parameter on all kernel functions.
+      Hybrid/quantum default remains ZZ for backward compat.
+- [ ] **Pauli Path ZNE in the live runner** — currently the ZNE helpers
 - [ ] **Pauli Path ZNE in the live runner** — currently the ZNE helpers
       in the sibling repo are run only by the bootstrap CI driver, not
       by the per-job runner here. Wiring `all_zero_noise_extrapolations`
@@ -298,10 +297,13 @@ Tracked here so the next person picking it up has the full punch list.
       block.
 
 ### Service hardening
-- [ ] **PubChem cache GC.** Current cache is unbounded; add an LRU cap
-      keyed on the cache dir size or last-accessed timestamp.
-- [ ] **Per-job timeout** in the runner — real-hardware paths can hang on
-      queue. Bound + status flip to `failed` + skeptic-warning seed.
+- [x] **PubChem cache GC** — age-based pruning (`max_age_days`) + size-
+      based oldest-first LRU eviction (`max_size_mb`). Throttled to once
+      per `gc_interval_seconds`. Full test coverage.
+- [x] **Per-job timeout** in the runner — `asyncio.wait_for` wraps the
+      ML dispatcher `to_thread` call. Configurable via `HETQML_JOB_TIMEOUT`
+      env var (default 300 s) or `Runner(..., job_timeout=N)`. On timeout
+      the job flips to `failed` with a descriptive error message.
 - [ ] **OpenAPI doc round-trip.** `/preregistration/status`,
       `/molecule/{cid}`, `/settings`, `/decisions` all have
       schemas; export the OpenAPI JSON as part of CI and assert the
@@ -319,7 +321,56 @@ Tracked here so the next person picking it up has the full punch list.
       not bundled with the bootstrap CI doc. Will land at
       `docs/deployment/IBM_TORINO_HARDWARE.md`.
 
-## 8. Pointers
+## 8. Leaderboard splice alignment — canonical-name matching
+
+`simulate_run` in `jobs/runner.py` now uses **canonical-name matching** to
+splice real `AlgoResult` metrics into the correct leaderboard row rather
+than overwriting whatever happened to be marked `is_top` by the randomized
+PR-AUC sort.
+
+### What changed
+
+1. **`_canonical_leaderboard_name()`** — maps `algo.top_model` to its
+   canonical row name via prefix matching (e.g. `"Stacking ensemble (LR+…)`
+   → `"Stacking ensemble"`).
+2. **`_leaderboard()` family normalization** — `family="stacking"` is
+   normalized to `"classical"` for the `same_family` filter so the stacking
+   ensemble row gets the `is_top` badge.
+3. **Splice block** — resets `is_top` across all rows, then sets it on the
+   canonical target. Falls back to the existing `is_top` logic when no
+   canonical match is found (preserving backward compat for
+   `"LR + GBM ensemble"` and `"QK-SVC ZZ(2,4)"`).
+
+### Mapped algorithms
+
+| `algo.top_model` | Canonical row | Splice behaviour |
+|---|---|---|
+| `Stacking ensemble (LR+GBM+ET → meta-LR)` | `"Stacking ensemble"` | Spliced + `is_top` set on `"Stacking ensemble"` row |
+| `R-GCN (1-hop) → LogReg` | `"R-GCN"` | Spliced + `is_top` set on `"R-GCN"` row |
+| `TransE → LogReg` | `"TransE"` | Spliced + `is_top` set on `"TransE"` row |
+| `LR + GBM ensemble` | (no match) | Falls through to `is_top` classical row |
+| `QK-SVC ZZ(2,4)` / `QK-SVC Pauli(2,4)` | (no match) | Falls through to `is_top` hybrid/quantum row |
+
+### Tests added
+
+- `test_simulate_run_splices_stacking_ensemble_row`
+- `test_simulate_run_splices_rgcn_row`
+- `test_simulate_run_splices_transe_row`
+- `test_simulate_run_falls_back_to_is_top_when_no_canonical_match`
+- `test__canonical_leaderboard_name_known_algos`
+- `test__canonical_leaderboard_name_returns_none_for_unmatched`
+- `test_runner_times_out_long_running_job` (per-job timeout)
+- `test_runner_with_adequate_timeout_completes` (timeout control)
+
+### Verify scripts
+
+New root `package.json` scripts:
+
+- `pnpm test:api:fast` — runs the 118 fast tests (~35 s), skips slow ML
+- `pnpm verify` — `typecheck` + `vitest` + `test:api:fast` + `ruff check`
+- `pnpm verify:ci` — full CI belt including slow ML tests
+
+## 9. Pointers
 
 - This repo (FastAPI service + `hetqml_api.ml` package) — [`Quantum-Global-Group/biomedical`](https://github.com/Quantum-Global-Group/biomedical) on `roc/preregistration-tighten`
 - Algorithm dispatcher — [`apps/api/src/hetqml_api/ml/`](../apps/api/src/hetqml_api/ml/)

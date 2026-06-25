@@ -13,6 +13,7 @@ import asyncio
 import hashlib
 import logging
 import math
+import os
 import random
 from datetime import UTC, datetime
 
@@ -164,7 +165,7 @@ def _detailed(
     )
 
 
-# Canonical 13-row leaderboard roster the plan calls for: 8 classical
+# Canonical 15-row leaderboard roster the plan calls for: 10 classical
 # (including the three Project-Rephetio metapath baselines DWPC, Random
 # Walk w/ Restart, PathCount Geometric) + 3 hybrid + 2 pure-quantum.
 # Order is the static-export presentation order; PR-AUC sort happens after
@@ -178,10 +179,13 @@ _CANONICAL_LEADERBOARD: list[tuple[str, str]] = [
     ("Quantum Kernel + Metapath", "28"),
     ("QSVC (Pauli)", "16"),
     ("VQC", "24"),
-    # Classical (8) — top-line baselines plus the 3 canonical metapath
-    # baselines from §1.3 of the preregistration
+    # Classical (10) — top-line baselines plus the 3 canonical metapath
+    # baselines from §1.3 of the preregistration and the 2 KG-embedding
+    # baselines (R-GCN, TransE) from §6.2
     ("Stacking ensemble", "2.1k"),
     ("RotatE → LR", "384"),
+    ("R-GCN", "1.2k"),
+    ("TransE", "96"),
     ("Extra Trees", "18k"),
     ("SVM (RBF)", "92"),
     ("Logistic Regression", "128"),
@@ -199,6 +203,8 @@ _FAMILY_BY_NAME: dict[str, str] = {
     "VQC": "hybrid",
     "Stacking ensemble": "classical",
     "RotatE → LR": "classical",
+    "R-GCN": "classical",
+    "TransE": "classical",
     "Extra Trees": "classical",
     "SVM (RBF)": "classical",
     "Logistic Regression": "classical",
@@ -210,14 +216,33 @@ _FAMILY_BY_NAME: dict[str, str] = {
 }
 
 
-def _leaderboard(rng: random.Random, family: str) -> list[LeaderboardRow]:
-    """Render the 13-row canonical leaderboard.
+def _canonical_leaderboard_name(algo: AlgoResult) -> str | None:
+    """Derive the canonical leaderboard row name from ``algo.top_model``.
 
-    Always emits the same 13 algorithms (8 classical / 3 hybrid / 2 quantum)
-    so the canonical baselines DWPC, Random Walk w/ Restart and PathCount
-    Geometric are present on every run regardless of run-path family. PR-AUC
-    is seeded per-selection so the table is deterministic but reorders
-    visibly when the user changes path/compound/disease.
+    When the top-model string starts with a canonical name in
+    ``_CANONICAL_LEADERBOARD`` (e.g. ``"Stacking ensemble (LR+…)"`` →
+    ``"Stacking ensemble"``), return that name so the splice block
+    overwrites the correct row instead of whatever happened to be
+    marked ``is_top`` by the randomised sort in ``_leaderboard``.
+
+    Returns ``None`` when no specific canonical row matches — the
+    caller then falls through to the existing ``is_top`` logic.
+    """
+    for name, _ in _CANONICAL_LEADERBOARD:
+        if algo.top_model.startswith(name):
+            return name
+    return None
+
+
+def _leaderboard(rng: random.Random, family: str) -> list[LeaderboardRow]:
+    """Render the 15-row canonical leaderboard.
+
+    Always emits the same 15 algorithms (10 classical / 3 hybrid / 2
+    quantum) so the canonical baselines DWPC, Random Walk w/ Restart,
+    PathCount Geometric, R-GCN and TransE are present on every run
+    regardless of run-path family. PR-AUC is seeded per-selection so
+    the table is deterministic but reorders visibly when the user
+    changes path/compound/disease.
     """
     rows: list[LeaderboardRow] = []
     classical_best_pr = round(0.66 + 0.10 * rng.random(), 4)
@@ -246,7 +271,10 @@ def _leaderboard(rng: random.Random, family: str) -> list[LeaderboardRow]:
         )
     rows.sort(key=lambda r: r.pr_auc, reverse=True)
     # Top model is path-aware: best within active family if any.
-    same_family = [r for r in rows if r.family == family]
+    # Normalise: "stacking" maps to "classical" so the
+    # "Stacking ensemble" row gets the is_top badge.
+    _filter_family = "classical" if family == "stacking" else family
+    same_family = [r for r in rows if r.family == _filter_family]
     top = same_family[0] if same_family else rows[0]
     top.is_top = True
     return rows
@@ -565,12 +593,25 @@ def _real_guard_states(
         )
         from hetqml_api.ml.features import _feature_matrix_source, build_features
 
-        if _feature_matrix_source() == "catalog":
+        source = _feature_matrix_source()
+        if source in ("catalog", "hetionet"):
             fm = build_features(selection, n_samples=200)
-            if fm.source == "catalog":
-                hn = catalog_negatives_exclude_focal_pair(
-                    selection, n_samples=200, seed=fm.selection_seed
-                )
+            if fm.source in ("catalog", "hetionet"):
+                # Use the appropriate negatives-exclusion check for the
+                # active feature source.
+                hn: bool | None = None
+                if fm.source == "hetionet":
+                    from hetqml_api.ml.hetionet_features import (
+                        hetionet_negatives_exclude_focal_pair,
+                    )
+
+                    hn = hetionet_negatives_exclude_focal_pair(
+                        selection, n_samples=200, seed=fm.selection_seed
+                    )
+                if hn is None and fm.source == "catalog":
+                    hn = catalog_negatives_exclude_focal_pair(
+                        selection, n_samples=200, seed=fm.selection_seed
+                    )
                 if hn is not None:
                     states["hard-negatives"] = hn
                 max_r = max_abs_pearson_feature_target_correlation(fm.X, fm.y)
@@ -1258,11 +1299,24 @@ def simulate_run(
     # produced. Without this, the displayed PR-AUC and the leaderboard
     # row would diverge.
     if algo is not None:
-        # Find the existing top row for this family (or the global top)
-        # and overwrite its metrics + name with the real result.
-        target = next(
-            (r for r in leaderboard if r.is_top), leaderboard[0]
+        # Try to find the specific canonical row for this algorithm
+        # (e.g. "Stacking ensemble", "R-GCN", "TransE") so the real
+        # metrics land on the row the preregistration parser expects.
+        canonical_name = _canonical_leaderboard_name(algo)
+        target: LeaderboardRow | None = (
+            next((r for r in leaderboard if r.model == canonical_name), None)
+            if canonical_name
+            else None
         )
+        if target is None:
+            # No canonical match — fall back to the current is_top row
+            target = next(
+                (r for r in leaderboard if r.is_top), leaderboard[0]
+            )
+        # Clear the current is_top on every row, then set it on the spliced row
+        for r in leaderboard:
+            r.is_top = False
+        target.is_top = True
         target.model = algo.top_model
         target.family = algo.family  # type: ignore[assignment]
         target.pr_auc = round(algo.pr_auc, 4)
@@ -1352,6 +1406,7 @@ class Runner:
         *,
         settings_store: SettingsStore | None = None,
         synthetic_only: bool = False,
+        job_timeout: int | None = None,
     ) -> None:
         self._store = store
         self._settings_store = settings_store
@@ -1360,6 +1415,13 @@ class Runner:
         # stub metrics. Existing tests import the runner without the ML
         # stack and shouldn't pay 0.2–4s per job.
         self._synthetic_only = synthetic_only
+        # Per-job timeout in seconds. Default 300 s (5 min) covers
+        # classical + Aer paths; quantum hardware can exceed this.
+        self._job_timeout = (
+            job_timeout
+            if job_timeout is not None
+            else int(os.environ.get("HETQML_JOB_TIMEOUT", "300"))
+        )
 
     def schedule(self, job: Job) -> asyncio.Task[None]:
         return asyncio.create_task(self._run(job.id))
@@ -1399,13 +1461,18 @@ class Runner:
                         ibm_backend = ""
                 # The ML dispatcher is CPU-bound (numpy + Aer); offload to
                 # a worker thread so polling endpoints stay snappy.
-                algo, probs = await asyncio.to_thread(
-                    run_algorithm_with_probs,
-                    running.run_path.family,
-                    running.selection,
-                    ibm_token=ibm_token,
-                    ibm_crn=ibm_crn,
-                    ibm_backend=ibm_backend,
+                # Real-hardware quantum paths can hang on queue — bound with
+                # configurable timeout (default 300 s, env HETQML_JOB_TIMEOUT).
+                algo, probs = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        run_algorithm_with_probs,
+                        running.run_path.family,
+                        running.selection,
+                        ibm_token=ibm_token,
+                        ibm_crn=ibm_crn,
+                        ibm_backend=ibm_backend,
+                    ),
+                    timeout=self._job_timeout,
                 )
             else:
                 # Test-mode: keep the previous "sleep 2s, return synthetic"
@@ -1422,6 +1489,15 @@ class Runner:
                 }
             )
             await self._store.update(completed)
+        except asyncio.TimeoutError:
+            failed = running.model_copy(
+                update={
+                    "status": "failed",
+                    "error": f"Job timed out after {self._job_timeout}s",
+                    "completed_at": datetime.now(UTC),
+                }
+            )
+            await self._store.update(failed)
         except Exception as exc:
             failed = running.model_copy(
                 update={

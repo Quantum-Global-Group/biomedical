@@ -63,7 +63,7 @@ test.describe("smoke: initialize → job → experiment", () => {
       page.getByText(/which model performed best/i).first(),
     ).toBeVisible({ timeout: 90_000 });
 
-    // Canonical 13-row roster from `apps/api/src/hetqml_api/jobs/runner.py`
+    // Canonical 15-row roster from `apps/api/src/hetqml_api/jobs/runner.py`
     // — at least one of these algorithm names should be present.
     const anyKnownModel = page.getByText(
       /Quantum Kernel \+ Metapath|Stacking ensemble|Logistic Regression|DWPC \(Project Rephetio\)/i,

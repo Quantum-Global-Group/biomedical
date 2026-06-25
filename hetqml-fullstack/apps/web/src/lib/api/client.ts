@@ -488,12 +488,22 @@ export function fetchIntegrityGuardsCatalog(): Promise<IntegrityGuardCatalogResp
 /** Fetch a 3D SDF for a PubChem CID via the API's cached PubChem proxy.
  *
  * Returns the raw SDF text (suitable for `viewer.addModel(text, "sdf")`
- * with 3Dmol). Throws on 404 ("CID not found") and other non-2xx
- * responses; callers should display an empty/error state. */
+ * with 3Dmol). Throws an `ApiError` on 404 ("CID not found") and other
+ * non-2xx responses so the error UI can show the trace id alongside the
+ * message. Callers should display an empty/error state on rejection.
+ *
+ * Sends `x-request-id` so the response's `X-Request-ID` is echoed back
+ * to the error log; we keep the raw `fetch` (no JSON) because the SDF
+ * payload is plain text consumed by 3Dmol.js. */
 export async function getMoleculeSdf(cid: number): Promise<string> {
+  const requestId = newRequestId();
   const res = await fetch(`${apiBase()}/molecule/${cid}`, {
-    headers: { accept: "chemical/x-mdl-sdfile,text/plain;q=0.9" },
+    headers: {
+      accept: "chemical/x-mdl-sdfile,text/plain;q=0.9",
+      "x-request-id": requestId,
+    },
   });
+  const echoedRequestId = res.headers.get("x-request-id") ?? requestId;
   if (!res.ok) {
     let detail: string;
     try {
@@ -501,7 +511,7 @@ export async function getMoleculeSdf(cid: number): Promise<string> {
     } catch {
       detail = res.statusText;
     }
-    throw new Error(`${res.status} ${detail}`);
+    throw new ApiError(res.status, detail, echoedRequestId);
   }
   return res.text();
 }
